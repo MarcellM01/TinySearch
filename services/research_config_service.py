@@ -43,7 +43,6 @@ DEFAULT_RESEARCH_CONFIG: dict[str, Any] = {
     "dense_document_prefix": "",
     "dense_document_embed_batch_size": 32,
     "trace_path": "trace_logs/agentic_trace.json",
-    "mcp_transport": "stdio",
 }
 
 _INT_FIELDS = {
@@ -76,7 +75,7 @@ _FLOAT_FIELDS = {
 def _coerce_config(raw: dict[str, Any]) -> dict[str, Any]:
     config = dict(DEFAULT_RESEARCH_CONFIG)
     config.update(raw)
-    for legacy in ("embedding_model", "embedding_gguf_file"):
+    for legacy in ("embedding_model", "embedding_gguf_file", "mcp_transport"):
         config.pop(legacy, None)
     for key in _INT_FIELDS:
         config[key] = int(config[key])
@@ -91,7 +90,6 @@ def _coerce_config(raw: dict[str, Any]) -> dict[str, Any]:
         "crawl_fit_markdown_mode",
         "crawl_bm25_language",
         "trace_path",
-        "mcp_transport",
     ):
         if config.get(key) is not None:
             config[key] = str(config[key])

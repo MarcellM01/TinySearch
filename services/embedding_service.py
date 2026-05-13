@@ -44,6 +44,93 @@ def _sentence_transformers_cache_folder() -> str:
     return str(path.resolve())
 
 
+def _onnx_bundle_dir() -> Path:
+    raw = os.environ.get("TINYSEARCH_ONNX_MODEL_DIR", "").strip()
+    if raw:
+        return Path(raw).expanduser().resolve()
+    return (_PROJECT_ROOT / "models" / "all-minilm-l6-v2-onnx").resolve()
+
+
+def _onnx_bundle_ready() -> bool:
+    d = _onnx_bundle_dir()
+    if not (d / "model.onnx").is_file():
+        return False
+    if (d / "tokenizer.json").is_file():
+        return True
+    if (d / "tokenizer_config.json").is_file() and (d / "vocab.txt").is_file():
+        return True
+    return (d / "tokenizer.model").is_file()
+
+
+def default_local_will_use_onnx_bundle() -> bool:
+    """True when ``embedding_backend`` ``default`` will embed via the shipped ONNX bundle."""
+    return _onnx_bundle_ready()
+
+
+@lru_cache(maxsize=1)
+def _load_onnx_runtime_bundle() -> tuple[Any, Any]:
+    try:
+        import onnxruntime as ort
+        from transformers import AutoTokenizer
+    except ImportError as exc:
+        raise RuntimeError(
+            "ONNX embedding bundle is present but `onnxruntime` (and `transformers`) "
+            "are required. Install with: pip install onnxruntime"
+        ) from exc
+
+    d = _onnx_bundle_dir()
+    session = ort.InferenceSession(
+        str(d / "model.onnx"),
+        providers=["CPUExecutionProvider"],
+    )
+    tokenizer = AutoTokenizer.from_pretrained(str(d), local_files_only=True)
+    return session, tokenizer
+
+
+def _embed_onnx_sync(inputs: list[str]) -> list[list[float]]:
+    import numpy as np
+
+    if not inputs:
+        return []
+
+    t0 = time.perf_counter()
+    session, tokenizer = _load_onnx_runtime_bundle()
+    t_after_load = time.perf_counter()
+    n_chars = sum(len(s) for s in inputs)
+    batch_size = 32
+    all_rows: list[list[float]] = []
+    with _EMBED_LOCK:
+        t_embed0 = time.perf_counter()
+        for i in range(0, len(inputs), batch_size):
+            batch = inputs[i : i + batch_size]
+            enc = tokenizer(
+                batch,
+                padding=True,
+                truncation=True,
+                max_length=256,
+                return_tensors="np",
+            )
+            ort_inputs = {
+                "input_ids": enc["input_ids"].astype(np.int64),
+                "attention_mask": enc["attention_mask"].astype(np.int64),
+            }
+            out = session.run(("sentence_embedding",), ort_inputs)[0]
+            all_rows.extend(out.tolist())
+        embed_s = time.perf_counter() - t_embed0
+    total_s = time.perf_counter() - t0
+    if _embed_timing_log_enabled():
+        prep_s = t_embed0 - t0
+        lock_wait_s = t_embed0 - t_after_load
+        print(
+            f"[embedding] backend=onnx_cpu n_inputs={len(inputs)} chars={n_chars} "
+            f"embed_s={embed_s:.3f} prep_s={prep_s:.3f} lock_wait_s={lock_wait_s:.3f} "
+            f"total_s={total_s:.3f} bundle={_onnx_bundle_dir()}",
+            file=sys.stderr,
+            flush=True,
+        )
+    return all_rows
+
+
 def _embed_timing_log_enabled() -> bool:
     v = os.environ.get("TINYSEARCH_LOG_EMBED_TIMING", "0").strip().lower()
     return v not in ("0", "false", "no", "off")
@@ -164,6 +251,9 @@ def _load_fixed_sentence_transformer() -> Any:
 def _embed_default_local_sync(inputs: list[str]) -> list[list[float]]:
     if not inputs:
         return []
+
+    if _onnx_bundle_ready():
+        return _embed_onnx_sync(inputs)
 
     t0 = time.perf_counter()
     model = _load_fixed_sentence_transformer()

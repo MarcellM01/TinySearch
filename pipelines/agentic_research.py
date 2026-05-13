@@ -159,12 +159,18 @@ def _format_results_prompt(
         "",
         "CRITICAL INSTRUCTIONS",
         PROMPT_RULE,
-        "You are answering a question using search results.",
-        "Use only the text under RESULTS.",
-        "If the answer is not directly supported, say the results are not enough.",
-        "Use TODAY to understand relative dates like today, yesterday, this year, or last month.",
-        "If the RESULTS text contains dates, use those dates when they matter.",
+        "You are answering the QUESTION using only the text under RESULTS.",
+        "First resolve any relative date in the QUESTION using TODAY.",
+        f"TODAY is {today_text!r}.",
+        f"For example, 'last year' means calendar year {int(today_text.split('-')[0]) - 1}.",
+        "Use only facts directly supported by RESULTS.",
+        "Do not use your own knowledge.",
+        "Do not add extra historical claims unless directly supported by RESULTS.",
+        "Do not infer 'first ever', 'most recent', 'record', or franchise history unless RESULTS explicitly support it.",
+        "If RESULTS contain conflicting information, prefer the result that directly matches the resolved date and question.",
+        "If the conflict cannot be resolved, say the results conflict.",
         "Cite the source URL after each factual claim.",
+        "If the answer is not directly supported by RESULTS, say the results are not enough.",
         PROMPT_RULE,
         "",
         PROMPT_RULE,
@@ -398,6 +404,7 @@ async def agentic_run(
     embedding_semaphore = asyncio.Semaphore(max(1, max_concurrent_embedding_calls))
 
     search_chunks = [_search_chunk(result) for result in results]
+    await emit("search_embed_ranking", snippets=len(search_chunks))
     ranked_search_chunks = await _rank(
         query=query,
         chunks=search_chunks,
@@ -489,6 +496,7 @@ async def agentic_run(
         1,
         min(len(chunk_pool), chunk_max_results_to_keep * oversample),
     )
+    await emit("chunk_embed_ranking", chunks=len(chunk_pool), rank_pool_cap=chunk_rank_pool_cap)
     ranked_wide = await _rank(
         query=query,
         chunks=chunk_pool,

@@ -49,6 +49,12 @@ The default embedding backend downloads `all-MiniLM-L6-v2` through
 `sentence-transformers` on first use and caches it outside the repo. Set
 `TINYSEARCH_HF_CACHE` if you want to choose the cache location.
 
+For faster cold starts (especially in MCP subprocesses), ship the ONNX bundle under
+`models/all-minilm-l6-v2-onnx/` (see `models/all-minilm-l6-v2-onnx/README.md` and
+`scripts/export_embedding_onnx.py`). When `model.onnx` and tokenizer files are
+present, TinySearch uses `onnxruntime` instead of loading the PyTorch stack. Override
+the directory with `TINYSEARCH_ONNX_MODEL_DIR` if needed.
+
 ## MCP Setup
 
 Add TinySearch to your MCP client config. Use absolute paths.
@@ -94,6 +100,11 @@ in `answer`; your client model should use that prompt to produce the final,
 cited response.
 
 Template config files live in `mcp_templates/`.
+
+The server uses **stdio** by default (what Cursor and similar clients expect when
+they spawn `python .../mcp_server.py`). To run with `sse` or `streamable-http`
+instead, set environment variable `MCP_TRANSPORT` when starting the process; do
+not put transport in `configs/research_config.json`.
 
 ## Optional HTTP Server
 
@@ -195,9 +206,9 @@ Tune research defaults in `configs/research_config.json`:
 - Search: `search_top_k`, `search_rrf_cutoff`, `search_dense_weight`, `search_max_results_to_keep`
 - Chunks: `chunk_rrf_cutoff`, `chunk_dense_weight`, `chunk_max_results_to_keep` (default `2`, global across the chunk pool)
 - Crawl: `crawl_max_chunk_tokens` (default `300`), `crawl_overlap_tokens`, `max_concurrent_crawls`
-- Embeddings: `embedding_backend` (`default` = fixed local `all-MiniLM-L6-v2` cached outside the repo, or `openai_compatible`), `embedding_openai_env_file` (path to `.env` for API URL, key, and model when using `openai_compatible`), `max_concurrent_embedding_calls`
+- Embeddings: `embedding_backend` (`default` = ONNX bundle in `models/all-minilm-l6-v2-onnx/` when present, otherwise fixed local `all-MiniLM-L6-v2` via `sentence-transformers` cached outside the repo, or `openai_compatible`), `embedding_openai_env_file` (path to `.env` for API URL, key, and model when using `openai_compatible`), `max_concurrent_embedding_calls`; optional `TINYSEARCH_ONNX_MODEL_DIR` for a custom ONNX bundle path
 - Dense input prefixes: `dense_query_prefix`, `dense_document_prefix`
-- Trace and server: `trace_path`, `mcp_transport`
+- Trace: `trace_path`
 
 For `embedding_backend` `openai_compatible`, add a `.env` file at the project root (or set `embedding_openai_env_file`) with `OPENAI_BASE_URL` (optional for api.openai.com), `OPENAI_API_KEY`, and `OPENAI_EMBEDDING_MODEL` (aliases: `EMBEDDING_MODEL`, `MODEL_NAME`).
 

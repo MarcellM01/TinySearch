@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 import time
 from pathlib import Path
@@ -57,9 +58,17 @@ async def _emit_mcp_progress(ctx: Context, event: str, payload: dict[str, Any]) 
         "start": "Starting research",
         "search_start": "Searching the web",
         "search_results": f"Found {payload.get('results_count', 0)} search result(s)",
+        "search_embed_ranking": (
+            f"Ranking {payload.get('snippets', 0)} search snippet(s) with embeddings "
+            "(first run can load the local model for tens of seconds)"
+        ),
         "search_ranked": f"Kept {payload.get('kept_results', 0)} page(s) to crawl",
         "crawl_start": f"Reading {payload.get('url')}",
         "crawl_done": f"Crawled page ({payload.get('chunks', 0)} text chunk(s))",
+        "chunk_embed_ranking": (
+            f"Ranking {payload.get('chunks', 0)} chunk(s) for relevance "
+            f"(pool cap {payload.get('rank_pool_cap', 0)})"
+        ),
         "crawl_error": (
             f"Could not read {payload.get('url')}"
             + (
@@ -84,11 +93,20 @@ async def _emit_mcp_progress(ctx: Context, event: str, payload: dict[str, Any]) 
         "start": 1,
         "search_start": 2,
         "search_results": 3,
+        "search_embed_ranking": 3,
         "search_ranked": 4,
+        "chunk_embed_ranking": 7,
         "pages_indexed": 8,
         "done": 10,
     }
-    notify_events = {"search_ranked", "pages_indexed", "crawl_error", "done"}
+    notify_events = {
+        "search_ranked",
+        "search_embed_ranking",
+        "chunk_embed_ranking",
+        "pages_indexed",
+        "crawl_error",
+        "done",
+    }
     message = messages.get(event, event.replace("_", " "))
     if event in notify_events:
         await ctx.info(message)
@@ -139,7 +157,10 @@ async def research(query: str, ctx: Context) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    transport = str(load_research_config()["mcp_transport"])
+    transport = os.environ.get("MCP_TRANSPORT", "stdio").strip() or "stdio"
     if transport not in {"stdio", "sse", "streamable-http"}:
-        raise ValueError("mcp_transport must be one of: stdio, sse, streamable-http")
+        raise ValueError(
+            "MCP_TRANSPORT must be one of: stdio, sse, streamable-http "
+            "(default stdio for IDE-spawned MCP; set env only for standalone HTTP/SSE)"
+        )
     mcp.run(transport=transport)
