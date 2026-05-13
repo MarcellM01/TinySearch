@@ -3,10 +3,18 @@ import html as _html
 import re
 import sys
 from dataclasses import dataclass
+from functools import lru_cache
+from typing import Any
 from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 from urllib.request import Request, urlopen
 
-from crawl4ai import AsyncWebCrawler
+
+@lru_cache(maxsize=1)
+def _async_web_crawler_cls() -> Any:
+    from crawl4ai import AsyncWebCrawler
+
+    return AsyncWebCrawler
+
 
 def _ensure_utf8_stdio() -> None:
     try:
@@ -66,6 +74,7 @@ async def crawl(url: str) -> dict:
     Returns a dict with: url, markdown, html, links.
     """
     _ensure_utf8_stdio()
+    AsyncWebCrawler = _async_web_crawler_cls()
     async with AsyncWebCrawler() as crawler:
         result = await crawler.arun(url=url)
 

@@ -388,7 +388,9 @@ async def agentic_run(
     _agentic_log(f"start query={query!r}")
     await emit("start", query=query)
     await emit("search_start", query=query, search_top_k=search_top_k)
+    _agentic_log(f"search start top_k={search_top_k}")
     results = [result for result in search_fn(query, max(1, search_top_k)) if _is_http_url(result.url)]
+    _agentic_log(f"search done results={len(results)}")
     trace["web_search"] = [asdict(result) for result in results]
     await emit("search_results", results_count=len(results))
 
@@ -405,6 +407,7 @@ async def agentic_run(
 
     search_chunks = [_search_chunk(result) for result in results]
     await emit("search_embed_ranking", snippets=len(search_chunks))
+    _agentic_log(f"search rank start snippets={len(search_chunks)}")
     ranked_search_chunks = await _rank(
         query=query,
         chunks=search_chunks,
@@ -419,6 +422,7 @@ async def agentic_run(
         dense_document_prefix=dense_document_prefix,
         dense_document_embed_batch_size=dense_document_embed_batch_size,
     )
+    _agentic_log(f"search rank done kept={len(ranked_search_chunks)}")
     trace["ranked_search_results"] = ranked_search_chunks
     await emit("search_ranked", kept_results=len(ranked_search_chunks))
 

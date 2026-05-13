@@ -2,13 +2,11 @@ import asyncio
 import re
 import sys
 import tempfile
+from functools import lru_cache
 from typing import Any
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from crawl4ai import AsyncWebCrawler, CrawlerRunConfig
-from crawl4ai.content_filter_strategy import BM25ContentFilter, PruningContentFilter
-from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 from docx import Document
 from pypdf import PdfReader
 from rank_bm25 import BM25Okapi
@@ -26,6 +24,23 @@ _DEFAULT_MARKDOWN_GENERATOR_OPTIONS: dict[str, Any] = {
     "skip_internal_links": True,
     "body_width": 0,
 }
+
+
+@lru_cache(maxsize=1)
+def _crawl4ai_stack() -> tuple[Any, Any, Any, Any, Any, Any]:
+    """Import crawl4ai only when crawling; avoids heavy DLL init before embedding in MCP."""
+    from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig
+    from crawl4ai.content_filter_strategy import BM25ContentFilter, PruningContentFilter
+    from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
+
+    return (
+        AsyncWebCrawler,
+        BrowserConfig,
+        CrawlerRunConfig,
+        BM25ContentFilter,
+        PruningContentFilter,
+        DefaultMarkdownGenerator,
+    )
 
 
 def _ensure_utf8_stdio() -> None:
@@ -95,14 +110,17 @@ def _crawler_config_for_fit_markdown(
     bm25_threshold: float,
     bm25_language: str,
     pruning_threshold: float,
-) -> CrawlerRunConfig | None:
+) -> Any:
+    _, _, CrawlerRunConfig, BM25ContentFilter, PruningContentFilter, DefaultMarkdownGenerator = (
+        _crawl4ai_stack()
+    )
     mode = fit_markdown_mode.strip().lower()
     if mode in ("", "off", "none", "raw"):
-        return None
+        return CrawlerRunConfig(verbose=False)
     if mode == "bm25":
         q = (user_query or "").strip()
         if not q:
-            return None
+            return CrawlerRunConfig(verbose=False)
         content_filter = BM25ContentFilter(
             user_query=q,
             bm25_threshold=bm25_threshold,
@@ -116,6 +134,7 @@ def _crawler_config_for_fit_markdown(
             f"not {fit_markdown_mode!r}"
         )
     return CrawlerRunConfig(
+        verbose=False,
         markdown_generator=DefaultMarkdownGenerator(
             content_filter=content_filter,
             options=dict(_DEFAULT_MARKDOWN_GENERATOR_OPTIONS),
@@ -249,6 +268,8 @@ async def crawl(
     """
     _ensure_utf8_stdio()
 
+    AsyncWebCrawler, BrowserConfig, _, _, _, _ = _crawl4ai_stack()
+
     run_config = _crawler_config_for_fit_markdown(
         fit_markdown_mode=fit_markdown_mode,
         user_query=user_query,
@@ -257,7 +278,7 @@ async def crawl(
         pruning_threshold=pruning_threshold,
     )
 
-    async with AsyncWebCrawler() as crawler:
+    async with AsyncWebCrawler(config=BrowserConfig(verbose=False)) as crawler:
         result = await crawler.arun(url=url, config=run_config)
 
     html = _get_html(result)
@@ -344,19 +365,24 @@ async def crawl_search(
             "document_type": document_type,
         }
 
+    AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, BM25ContentFilter, _, DefaultMarkdownGenerator = (
+        _crawl4ai_stack()
+    )
+
     bm25_filter = BM25ContentFilter(
         user_query=user_query,
         bm25_threshold=crawl4ai_bm25_threshold,
         language=crawl4ai_language,
     )
     config = CrawlerRunConfig(
+        verbose=False,
         markdown_generator=DefaultMarkdownGenerator(
             content_filter=bm25_filter,
             options=dict(_DEFAULT_MARKDOWN_GENERATOR_OPTIONS),
         )
     )
 
-    async with AsyncWebCrawler() as crawler:
+    async with AsyncWebCrawler(config=BrowserConfig(verbose=False)) as crawler:
         result = await crawler.arun(url=url, config=config)
 
     html = _get_html(result)

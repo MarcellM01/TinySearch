@@ -71,11 +71,11 @@ def default_local_will_use_onnx_bundle() -> bool:
 def _load_onnx_runtime_bundle() -> tuple[Any, Any]:
     try:
         import onnxruntime as ort
-        from transformers import AutoTokenizer
+        from tokenizers import Tokenizer
     except ImportError as exc:
         raise RuntimeError(
-            "ONNX embedding bundle is present but `onnxruntime` (and `transformers`) "
-            "are required. Install with: pip install onnxruntime"
+            "ONNX embedding bundle is present but `onnxruntime` and `tokenizers` "
+            "are required. Install with: pip install onnxruntime tokenizers"
         ) from exc
 
     d = _onnx_bundle_dir()
@@ -83,7 +83,8 @@ def _load_onnx_runtime_bundle() -> tuple[Any, Any]:
         str(d / "model.onnx"),
         providers=["CPUExecutionProvider"],
     )
-    tokenizer = AutoTokenizer.from_pretrained(str(d), local_files_only=True)
+    tokenizer = Tokenizer.from_file(str(d / "tokenizer.json"))
+    tokenizer.enable_truncation(max_length=256)
     return session, tokenizer
 
 
@@ -103,16 +104,25 @@ def _embed_onnx_sync(inputs: list[str]) -> list[list[float]]:
         t_embed0 = time.perf_counter()
         for i in range(0, len(inputs), batch_size):
             batch = inputs[i : i + batch_size]
-            enc = tokenizer(
-                batch,
-                padding=True,
-                truncation=True,
-                max_length=256,
-                return_tensors="np",
+            encoded = tokenizer.encode_batch(batch)
+            max_len = max((len(item.ids) for item in encoded), default=0)
+            input_ids = np.asarray(
+                [
+                    item.ids + [0] * (max_len - len(item.ids))
+                    for item in encoded
+                ],
+                dtype=np.int64,
+            )
+            attention_mask = np.asarray(
+                [
+                    item.attention_mask + [0] * (max_len - len(item.attention_mask))
+                    for item in encoded
+                ],
+                dtype=np.int64,
             )
             ort_inputs = {
-                "input_ids": enc["input_ids"].astype(np.int64),
-                "attention_mask": enc["attention_mask"].astype(np.int64),
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
             }
             out = session.run(("sentence_embedding",), ort_inputs)[0]
             all_rows.extend(out.tolist())

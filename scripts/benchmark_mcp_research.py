@@ -181,8 +181,8 @@ if __name__ == "__main__":
     _CWD = _PROJECT_ROOT
     _TOOL_TIMEOUT_SECONDS = 900
     _PHASE_LOG = True
-    _SHOW_PROGRESS = True
-    _SHOW_MCP_LOG = True
+    _SHOW_PROGRESS = False
+    _SHOW_MCP_LOG = False
     _SERVER_UNBUFFERED = True
     _LOG_EMBED_TIMING = True
     _LIST_TOOLS_ONLY = False
