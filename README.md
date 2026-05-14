@@ -101,6 +101,8 @@ cited response.
 
 Template config files live in `mcp_templates/`.
 
+The repo also includes [`agentic_coding_templates/global-rules-recommended.md`](agentic_coding_templates/global-rules-recommended.md), a global-rules template we **strongly recommend** if you wire TinySearch into any agentic coding tool (Cline, Roo Code, and similar). With those rules in place, it works like a charm.
+
 The server uses **stdio** by default (what Cursor and similar clients expect when
 they spawn `python .../mcp_server.py`). To run with `sse` or `streamable-http`
 instead, set environment variable `MCP_TRANSPORT` when starting the process; do
