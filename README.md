@@ -32,16 +32,16 @@ no hosted dashboard, no account system, no analytics, no scraped data cache.
 ## Install
 
 ```bash
-python -m venv venv
-source venv/bin/activate
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
 On Windows PowerShell:
 
 ```powershell
-python -m venv venv
-.\venv\Scripts\Activate.ps1
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
@@ -65,7 +65,7 @@ macOS / Linux:
 {
   "mcpServers": {
     "tinysearch": {
-      "command": "/absolute/path/to/TinySearch/venv/bin/python",
+      "command": "/absolute/path/to/TinySearch/.venv/bin/python",
       "args": [
         "/absolute/path/to/TinySearch/servers/mcp_server.py"
       ]
@@ -80,7 +80,7 @@ Windows:
 {
   "mcpServers": {
     "tinysearch": {
-      "command": "C:/absolute/path/to/TinySearch/venv/Scripts/python.exe",
+      "command": "C:/absolute/path/to/TinySearch/.venv/Scripts/python.exe",
       "args": [
         "C:/absolute/path/to/TinySearch/servers/mcp_server.py"
       ]

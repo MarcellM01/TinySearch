@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "tinysearch": {
-      "command": "/absolute/path/to/TinySearch/venv/bin/python",
+      "command": "/absolute/path/to/TinySearch/.venv/bin/python",
       "args": [
         "/absolute/path/to/TinySearch/servers/mcp_server.py"
       ]
