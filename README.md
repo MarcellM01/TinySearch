@@ -10,38 +10,79 @@
 [![MCP](https://img.shields.io/badge/MCP-research%20tool-222222)](https://modelcontextprotocol.io/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 
-TinySearch is a tiny, local-first research engine for agents. It searches the
-web, reranks results with dense embeddings plus BM25, crawls the best pages,
-pulls out the most relevant chunks, and hands your LLM a source-grounded prompt
-instead of a mystery-meat answer.
+A tiny local-first web research engine for MCP agents.
 
-It is built for MCP, simple enough to run locally, and boring in the best way:
-no hosted dashboard, no account system, no analytics, no scraped data cache.
+TinySearch searches the web, reranks results, crawls the best pages, extracts the most relevant chunks, and returns a source-grounded prompt your LLM can answer from instead of a mystery-meat answer.
 
-## Why It Exists
+No hosted dashboard.
+No account system.
+No analytics.
+No scraped-data cache.
 
-- Give agents a compact web research tool they can call over MCP.
-- Keep source URLs attached to every factual claim your LLM should make.
-- Avoid dumping entire pages into context when a few ranked chunks will do.
-- Let you swap between local ONNX embedding models and an OpenAI-compatible embedding API.
+Just search → crawl → rerank → grounded prompt.
 
-## What It Does
+## Why use it?
 
-- Searches DuckDuckGo's HTML endpoint.
-- Ranks search results with weighted reciprocal rank fusion over dense vectors and BM25.
-- Crawls kept pages with Crawl4AI.
-- Chunks and reranks page text globally, not one page at a time.
-- Returns a `SEARCH-GROUNDED ANSWER PROMPT` for the caller's model to answer from.
+- Give local agents web research without wiring together a whole search stack.
+- Keep source URLs attached to the evidence your model sees.
+- Avoid dumping full webpages into context.
+- Use local ONNX embeddings or an OpenAI-compatible embedding API.
+- Run over MCP or a simple FastAPI endpoint.
 
-## Entrypoints
+## TinySearch vs…
 
-- `pipelines.agentic_research.agentic_run`: single-turn search, crawl, ranking, and prompt assembly.
-- `servers.mcp_server`: MCP server for agent clients.
-- `servers.fastapi_server`: optional HTTP API.
+| Tool type | What it gives you | Tradeoff |
+| --- | --- | --- |
+| Search API | Search results | Usually hosted / paid |
+| Full crawler / index | Persistent search backend | More infrastructure |
+| SearxNG | Metasearch | Still needs setup and a ranking layer |
+| **TinySearch** | MCP research prompt with ranked chunks | Lightweight; not a full search engine |
 
-## Install
+## What it returns
+
+TinySearch does not directly answer the question.
+
+It returns a structured prompt like this:
+
+```text
+QUESTION
+What happened in the latest NFL playoffs?
+
+RESULTS
+1. Title
+   URL
+   Relevant extracted text...
+
+2. Title
+   URL
+   Relevant extracted text...
+
+INSTRUCTIONS
+Answer only from the results. Cite source URLs.
+```
+
+Then your LLM produces the final answer.
+
+## When not to use TinySearch
+
+TinySearch is not a replacement for a commercial search API or a persistent crawler.
+
+It is probably not the right tool if you need:
+
+- guaranteed search coverage
+- large-scale indexing
+- long-term page caching
+- enterprise observability
+- production SLA-backed web search
+
+It is meant for local agents, prototypes, personal workflows, and small systems where you want source-grounded web research without running a full search backend.
+
+## Quick start
 
 ```bash
+git clone https://github.com/MarcellM01/TinySearch
+cd TinySearch
+
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -50,21 +91,37 @@ pip install -r requirements.txt
 On Windows PowerShell:
 
 ```powershell
+git clone https://github.com/MarcellM01/TinySearch
+cd TinySearch
+
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-The `onnx` embedding backend uses local ONNX bundles under `models/`. Starting the
-MCP server or FastAPI app downloads the configured `embedding_model` once from Hugging
-Face when `embedding_backend` is `onnx`.
+Run the MCP server:
 
-Built-in local presets are `fast` (`onnx-models/all-MiniLM-L6-v2-onnx`),
-`balanced` (`BAAI/bge-small-en-v1.5`), and `quality` (`BAAI/bge-base-en-v1.5`).
-You can also set `embedding_model` to a custom Hugging Face ONNX repo id. Set
-`TINYSEARCH_MODELS_DIR` to move the whole model cache, or use
-`TINYSEARCH_ONNX_MODEL_DIR` only when you need to point at one exact bundle
-directory.
+```bash
+python servers/mcp_server.py
+```
+
+Or run the HTTP API:
+
+```bash
+uvicorn servers.fastapi_server:app --reload
+```
+
+### Demo
+
+Record a short terminal or MCP session as `assets/demo_terminal.gif` (or swap in a screenshot) and link it here—GitHub renders GIFs inline and it sells the workflow fast.
+
+Until then, imagine the MCP tool roughly like:
+
+```text
+$ # MCP tool: research("latest Basel III updates")
+$ # → answer field: QUESTION + RESULTS with titles, URLs, RELEVANT TEXT
+$ # Your model answers from those blocks only.
+```
 
 ## MCP Setup
 
@@ -100,7 +157,7 @@ Windows:
 }
 ```
 
-Docker with MCP over HTTP:
+### Docker with MCP over HTTP
 
 Docker is MCP-first. Released images are published as:
 
@@ -142,7 +199,7 @@ Example MCP client config:
 }
 ```
 
-Docker with MCP over stdio:
+### Docker with MCP over stdio
 
 Use this mode for MCP clients that launch tools as local commands instead of
 connecting to a URL. Add a Docker-backed command entry to your MCP client config. Replace
@@ -188,7 +245,7 @@ cited response.
 
 Template config files live in `mcp_templates/`.
 
-The repo also includes [`agentic_coding_templates/global-rules-recommended.md`](agentic_coding_templates/global-rules-recommended.md), a global-rules template we **strongly recommend** if you wire TinySearch into any agentic coding tool (Cline, Roo Code, and similar). With those rules in place, it works like a charm.
+The repo also includes [`agentic_coding_templates/global-rules-recommended.md`](agentic_coding_templates/global-rules-recommended.md), a global-rules template we **strongly recommend** if you wire TinySearch into any agentic coding tool (Cline, Roo Code, and similar). These rules help coding agents call TinySearch only when web research is actually needed.
 
 The server uses **stdio** by default (what Cursor and similar clients expect when
 they spawn `python .../mcp_server.py`). To run with `sse` or `streamable-http`
@@ -197,18 +254,34 @@ not put transport in `configs/research_config.json`.
 
 ## Optional HTTP Server
 
+Useful when you want HTTP instead of MCP:
+
 ```bash
 uvicorn servers.fastapi_server:app --reload
 ```
 
-Useful endpoints:
+Endpoints:
 
 - `GET /health`
 - `GET /web_search?query=...`
 - `POST /site_crawl`
 - `POST /research`
 
-## Research Flow
+## What it does
+
+- Searches DuckDuckGo's HTML endpoint.
+- Reranks search results using dense embeddings + BM25, combined with weighted reciprocal rank fusion.
+- Crawls kept pages with Crawl4AI.
+- Chunks and reranks page text globally, not one page at a time.
+- Returns a `SEARCH-GROUNDED ANSWER PROMPT` for the caller's model to answer from.
+
+## Entrypoints
+
+- `pipelines.agentic_research.agentic_run`: single-turn search, crawl, ranking, and prompt assembly.
+- `servers.mcp_server`: MCP server for agent clients.
+- `servers.fastapi_server`: optional HTTP API.
+
+## Research flow
 
 ```mermaid
 flowchart TD
@@ -222,8 +295,9 @@ flowchart TD
     H --> I[Final RESULTS prompt]
 ```
 
-The returned `answer` is not a synthesized answer. It is a prompt containing
-ranked source blocks:
+### Full returned prompt example
+
+The real `answer` string uses section banners and fuller instructions. Rough shape:
 
 ```text
 ========================================================================================
@@ -293,6 +367,17 @@ SEARCH-GROUNDED ANSWER PROMPT
 Tune research defaults in `configs/research_config.json`. Set
 `TINYSEARCH_CONFIG_PATH` to load a different JSON config file, which is the
 recommended Docker override pattern.
+
+The `onnx` embedding backend uses local ONNX bundles under `models/`. Starting the
+MCP server or FastAPI app downloads the configured `embedding_model` once from Hugging
+Face when `embedding_backend` is `onnx`.
+
+Built-in local presets are `fast` (`onnx-models/all-MiniLM-L6-v2-onnx`),
+`balanced` (`BAAI/bge-small-en-v1.5`), and `quality` (`BAAI/bge-base-en-v1.5`).
+You can also set `embedding_model` to a custom Hugging Face ONNX repo id. Set
+`TINYSEARCH_MODELS_DIR` to move the whole model cache, or use
+`TINYSEARCH_ONNX_MODEL_DIR` only when you need to point at one exact bundle
+directory.
 
 - Search: `search_top_k`, `search_rrf_cutoff`, `search_dense_weight`, `search_max_results_to_keep`
 - Chunks: `chunk_rrf_cutoff`, `chunk_dense_weight`, `chunk_max_results_to_keep` (default `2`, global across the chunk pool)
