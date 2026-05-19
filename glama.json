@@ -1,0 +1,20 @@
+{
+  "baseImage": "debian:trixie-slim",
+  "nodeVersion": "26",
+  "pythonVersion": "3.12",
+  "buildSteps": [
+    "python -m venv /opt/tinysearch-venv",
+    "/opt/tinysearch-venv/bin/python -m pip install --upgrade pip",
+    "/opt/tinysearch-venv/bin/pip install -r requirements.txt",
+    "mkdir -p /ms-playwright /data/models",
+    "PLAYWRIGHT_BROWSERS_PATH=/ms-playwright /opt/tinysearch-venv/bin/python -m playwright install --with-deps chromium",
+    "chmod -R a+rX /ms-playwright /data/models"
+  ],
+  "cmdArguments": [
+    "mcp-proxy",
+    "--",
+    "/opt/tinysearch-venv/bin/python",
+    "servers/mcp_server.py"
+  ],
+  "placeholderArguments": {}
+}
