@@ -302,6 +302,7 @@ async def agentic_run(
     embedder: EmbeddingFn | None = None,
     search_fn: SearchFn = search,
     crawl_fn: CrawlFn = crawl,
+    pipeline_timeout_seconds: float | None = None,
     # Backwards-compatible aliases accepted by older callers.
     search_limit: int | None = None,
     max_urls: int | None = None,
@@ -404,177 +405,183 @@ async def agentic_run(
         _write_trace(trace_path, trace)
         return AgenticResult(answer=answer)
 
-    _agentic_log(f"start query={query!r}")
-    await emit("start", query=query)
-    await emit("search_start", query=query, search_top_k=search_top_k)
-    _agentic_log(f"search start top_k={search_top_k}")
-    results = [result for result in search_fn(query, max(1, search_top_k)) if _is_http_url(result.url)]
-    _agentic_log(f"search done results={len(results)}")
-    trace["web_search"] = [asdict(result) for result in results]
-    await emit("search_results", results_count=len(results))
+    try:
+        async with asyncio.timeout(pipeline_timeout_seconds):
+            _agentic_log(f"start query={query!r}")
+            await emit("start", query=query)
+            await emit("search_start", query=query, search_top_k=search_top_k)
+            _agentic_log(f"search start top_k={search_top_k}")
+            results = [result for result in search_fn(query, max(1, search_top_k)) if _is_http_url(result.url)]
+            _agentic_log(f"search done results={len(results)}")
+            trace["web_search"] = [asdict(result) for result in results]
+            await emit("search_results", results_count=len(results))
 
-    if not results:
-        prompt = _format_results_prompt(question=query, results=[])
-        return finish("no_search_results", prompt, [])
+            if not results:
+                prompt = _format_results_prompt(question=query, results=[])
+                return finish("no_search_results", prompt, [])
 
-    tokenizer_name = (
-        str(encoding_name).strip()
-        if encoding_name is not None and str(encoding_name).strip().lower() != "embedding"
-        else resolve_embedding_tokenizer_name(
-            backend=embedding_backend,
-            embedding_model=embedding_model,
-            openai_env_file=env_file if embedding_backend == "openai_compatible" else None,
-        )
-    )
-    trace["config"]["tokenizer_name"] = tokenizer_name
-
-    if embedder is None:
-        embedder = create_embedder(
-            backend=embedding_backend,
-            embedding_model=embedding_model,
-            openai_env_file=env_file if embedding_backend == "openai_compatible" else None,
-        )
-    embedding_semaphore = asyncio.Semaphore(max(1, max_concurrent_embedding_calls))
-
-    search_chunks = [_search_chunk(result) for result in results]
-    await emit("search_embed_ranking", snippets=len(search_chunks))
-    _agentic_log(f"search rank start snippets={len(search_chunks)}")
-    ranked_search_chunks = await _rank(
-        query=query,
-        chunks=search_chunks,
-        dense_weight=search_dense_weight,
-        rrf_similarity_cutoff=search_rrf_cutoff,
-        max_results=search_max_results_to_keep,
-        embedder=embedder,
-        semaphore=embedding_semaphore,
-        timeout_seconds=embedding_timeout_seconds,
-        timeout_retries=embedding_timeout_retries,
-        dense_query_prefix=dense_query_prefix,
-        dense_document_prefix=dense_document_prefix,
-        dense_document_embed_batch_size=dense_document_embed_batch_size,
-    )
-    _agentic_log(f"search rank done kept={len(ranked_search_chunks)}")
-    trace["ranked_search_results"] = ranked_search_chunks
-    await emit("search_ranked", kept_results=len(ranked_search_chunks))
-
-    crawl_semaphore = asyncio.Semaphore(max(1, max_concurrent_crawls))
-
-    async def crawl_result(search_doc: dict[str, Any]) -> dict[str, Any]:
-        url = str(search_doc["url"])
-        async with crawl_semaphore:
-            await emit("crawl_start", url=url)
-            try:
-                crawled = await crawl_fn(
-                    url=url,
-                    encoding_name=tokenizer_name,
-                    user_query=query,
-                    fit_markdown_mode=crawl_fit_markdown_mode,
-                    fit_min_chars=crawl_fit_min_chars,
-                    bm25_threshold=crawl_bm25_threshold,
-                    bm25_language=crawl_bm25_language,
-                    pruning_threshold=crawl_pruning_threshold,
+            tokenizer_name = (
+                str(encoding_name).strip()
+                if encoding_name is not None and str(encoding_name).strip().lower() != "embedding"
+                else resolve_embedding_tokenizer_name(
+                    backend=embedding_backend,
+                    embedding_model=embedding_model,
+                    openai_env_file=env_file if embedding_backend == "openai_compatible" else None,
                 )
-            except Exception as exc:
-                error = f"{url}: {exc}"
-                await emit("crawl_error", url=url, error=str(exc))
-                return {
-                    **search_doc,
-                    "ranked_chunks": [],
-                    "chunks_total": 0,
-                    "crawl_error": error,
-                }
-            markdown = str(
-                crawled.get("markdown") or crawled.get("markdown_raw") or ""
-            ).strip()
-            markdown = truncate_text_to_max_tokens(
-                markdown,
-                crawl_max_page_tokens,
-                tokenizer_name,
             )
-            chunks = chunk_text(
-                markdown,
-                max_chunk_tokens=crawl_max_chunk_tokens,
-                overlap_tokens=crawl_overlap_tokens,
-                encoding_name=tokenizer_name,
-            )
-            source_chunks = [
-                {
-                    **chunk,
-                    "source_url": url,
-                    "source_title": str(search_doc["title"]),
-                    "source_result_id": search_doc["result_id"],
-                    "source_chunk_id": chunk.get("chunk_id"),
-                    "chunk_id": f"{search_doc['result_id']}:{chunk.get('chunk_id')}",
-                }
-                for chunk in chunks
-            ]
-            await emit("crawl_done", url=url, chunks=len(chunks), kept_chunks=0)
-            return {
-                **search_doc,
-                "chunks": source_chunks,
-                "ranked_chunks": [],
-                "chunks_total": len(chunks),
-                "crawl_error": None,
-            }
+            trace["config"]["tokenizer_name"] = tokenizer_name
 
-    crawled_results = await asyncio.gather(
-        *(crawl_result(search_doc) for search_doc in ranked_search_chunks)
-    )
-    chunk_pool = [
-        chunk
-        for result in crawled_results
-        for chunk in result.get("chunks", [])
-        if not result.get("crawl_error")
-    ]
-    oversample = max(1, chunk_rank_oversample)
-    chunk_rank_pool_cap = max(
-        1,
-        min(len(chunk_pool), chunk_max_results_to_keep * oversample),
-    )
-    await emit("chunk_embed_ranking", chunks=len(chunk_pool), rank_pool_cap=chunk_rank_pool_cap)
-    ranked_wide = await _rank(
-        query=query,
-        chunks=chunk_pool,
-        dense_weight=chunk_dense_weight,
-        rrf_similarity_cutoff=chunk_rrf_cutoff,
-        max_results=chunk_rank_pool_cap,
-        embedder=embedder,
-        semaphore=embedding_semaphore,
-        timeout_seconds=embedding_timeout_seconds,
-        timeout_retries=embedding_timeout_retries,
-        dense_query_prefix=dense_query_prefix,
-        dense_document_prefix=dense_document_prefix,
-        dense_document_embed_batch_size=dense_document_embed_batch_size,
-    )
-    ranked_chunk_pool = select_chunks_with_quota_and_fill(
-        ranked_wide,
-        final_limit=chunk_max_results_to_keep,
-        max_per_source_url=chunk_max_per_source_url,
-        dedupe_jaccard_threshold=chunk_dedupe_jaccard_threshold,
-    )
-    chunks_by_url: dict[str, list[dict[str, Any]]] = {}
-    for chunk in ranked_chunk_pool:
-        chunks_by_url.setdefault(str(chunk.get("source_url") or ""), []).append(chunk)
-    for result in crawled_results:
-        result["ranked_chunks"] = chunks_by_url.get(str(result["url"]), [])
-    trace["crawl_results"] = crawled_results
-    trace["ranked_chunk_pool"] = ranked_chunk_pool
-    crawl_errors = [
-        str(result["crawl_error"])
-        for result in crawled_results
-        if result.get("crawl_error")
-    ]
-    await emit(
-        "pages_indexed",
-        urls_read=len(ranked_search_chunks),
-        chunks_extracted=len(chunk_pool),
-        chunks_in_prompt=len(ranked_chunk_pool),
-        crawl_errors_count=len(crawl_errors),
-    )
-    prompt = _format_results_prompt(question=query, results=crawled_results)
-    await emit("done", results_count=len(crawled_results), crawl_errors_count=len(crawl_errors))
-    _agentic_log(f"done results={len(crawled_results)} crawl_errors={len(crawl_errors)}")
-    return finish("ok", prompt, crawl_errors)
+            if embedder is None:
+                embedder = create_embedder(
+                    backend=embedding_backend,
+                    embedding_model=embedding_model,
+                    openai_env_file=env_file if embedding_backend == "openai_compatible" else None,
+                )
+            embedding_semaphore = asyncio.Semaphore(max(1, max_concurrent_embedding_calls))
+
+            search_chunks = [_search_chunk(result) for result in results]
+            await emit("search_embed_ranking", snippets=len(search_chunks))
+            _agentic_log(f"search rank start snippets={len(search_chunks)}")
+            ranked_search_chunks = await _rank(
+                query=query,
+                chunks=search_chunks,
+                dense_weight=search_dense_weight,
+                rrf_similarity_cutoff=search_rrf_cutoff,
+                max_results=search_max_results_to_keep,
+                embedder=embedder,
+                semaphore=embedding_semaphore,
+                timeout_seconds=embedding_timeout_seconds,
+                timeout_retries=embedding_timeout_retries,
+                dense_query_prefix=dense_query_prefix,
+                dense_document_prefix=dense_document_prefix,
+                dense_document_embed_batch_size=dense_document_embed_batch_size,
+            )
+            _agentic_log(f"search rank done kept={len(ranked_search_chunks)}")
+            trace["ranked_search_results"] = ranked_search_chunks
+            await emit("search_ranked", kept_results=len(ranked_search_chunks))
+
+            crawl_semaphore = asyncio.Semaphore(max(1, max_concurrent_crawls))
+
+            async def crawl_result(search_doc: dict[str, Any]) -> dict[str, Any]:
+                url = str(search_doc["url"])
+                async with crawl_semaphore:
+                    await emit("crawl_start", url=url)
+                    try:
+                        crawled = await crawl_fn(
+                            url=url,
+                            encoding_name=tokenizer_name,
+                            user_query=query,
+                            fit_markdown_mode=crawl_fit_markdown_mode,
+                            fit_min_chars=crawl_fit_min_chars,
+                            bm25_threshold=crawl_bm25_threshold,
+                            bm25_language=crawl_bm25_language,
+                            pruning_threshold=crawl_pruning_threshold,
+                        )
+                    except Exception as exc:
+                        error = f"{url}: {exc}"
+                        await emit("crawl_error", url=url, error=str(exc))
+                        return {
+                            **search_doc,
+                            "ranked_chunks": [],
+                            "chunks_total": 0,
+                            "crawl_error": error,
+                        }
+                    markdown = str(
+                        crawled.get("markdown") or crawled.get("markdown_raw") or ""
+                    ).strip()
+                    markdown = truncate_text_to_max_tokens(
+                        markdown,
+                        crawl_max_page_tokens,
+                        tokenizer_name,
+                    )
+                    chunks = chunk_text(
+                        markdown,
+                        max_chunk_tokens=crawl_max_chunk_tokens,
+                        overlap_tokens=crawl_overlap_tokens,
+                        encoding_name=tokenizer_name,
+                    )
+                    source_chunks = [
+                        {
+                            **chunk,
+                            "source_url": url,
+                            "source_title": str(search_doc["title"]),
+                            "source_result_id": search_doc["result_id"],
+                            "source_chunk_id": chunk.get("chunk_id"),
+                            "chunk_id": f"{search_doc['result_id']}:{chunk.get('chunk_id')}",
+                        }
+                        for chunk in chunks
+                    ]
+                    await emit("crawl_done", url=url, chunks=len(chunks), kept_chunks=0)
+                    return {
+                        **search_doc,
+                        "chunks": source_chunks,
+                        "ranked_chunks": [],
+                        "chunks_total": len(chunks),
+                        "crawl_error": None,
+                    }
+
+            crawled_results = await asyncio.gather(
+                *(crawl_result(search_doc) for search_doc in ranked_search_chunks)
+            )
+            chunk_pool = [
+                chunk
+                for result in crawled_results
+                for chunk in result.get("chunks", [])
+                if not result.get("crawl_error")
+            ]
+            oversample = max(1, chunk_rank_oversample)
+            chunk_rank_pool_cap = max(
+                1,
+                min(len(chunk_pool), chunk_max_results_to_keep * oversample),
+            )
+            await emit("chunk_embed_ranking", chunks=len(chunk_pool), rank_pool_cap=chunk_rank_pool_cap)
+            ranked_wide = await _rank(
+                query=query,
+                chunks=chunk_pool,
+                dense_weight=chunk_dense_weight,
+                rrf_similarity_cutoff=chunk_rrf_cutoff,
+                max_results=chunk_rank_pool_cap,
+                embedder=embedder,
+                semaphore=embedding_semaphore,
+                timeout_seconds=embedding_timeout_seconds,
+                timeout_retries=embedding_timeout_retries,
+                dense_query_prefix=dense_query_prefix,
+                dense_document_prefix=dense_document_prefix,
+                dense_document_embed_batch_size=dense_document_embed_batch_size,
+            )
+            ranked_chunk_pool = select_chunks_with_quota_and_fill(
+                ranked_wide,
+                final_limit=chunk_max_results_to_keep,
+                max_per_source_url=chunk_max_per_source_url,
+                dedupe_jaccard_threshold=chunk_dedupe_jaccard_threshold,
+            )
+            chunks_by_url: dict[str, list[dict[str, Any]]] = {}
+            for chunk in ranked_chunk_pool:
+                chunks_by_url.setdefault(str(chunk.get("source_url") or ""), []).append(chunk)
+            for result in crawled_results:
+                result["ranked_chunks"] = chunks_by_url.get(str(result["url"]), [])
+            trace["crawl_results"] = crawled_results
+            trace["ranked_chunk_pool"] = ranked_chunk_pool
+            crawl_errors = [
+                str(result["crawl_error"])
+                for result in crawled_results
+                if result.get("crawl_error")
+            ]
+            await emit(
+                "pages_indexed",
+                urls_read=len(ranked_search_chunks),
+                chunks_extracted=len(chunk_pool),
+                chunks_in_prompt=len(ranked_chunk_pool),
+                crawl_errors_count=len(crawl_errors),
+            )
+            prompt = _format_results_prompt(question=query, results=crawled_results)
+            await emit("done", results_count=len(crawled_results), crawl_errors_count=len(crawl_errors))
+            _agentic_log(f"done results={len(crawled_results)} crawl_errors={len(crawl_errors)}")
+            return finish("ok", prompt, crawl_errors)
+    except TimeoutError:
+        _agentic_log(f"timeout query={query!r} limit_s={pipeline_timeout_seconds}")
+        prompt = _format_results_prompt(question=query, results=[])
+        return finish("timeout", prompt, [])
 
 
 async def agentic_answer(query: str, **kwargs: Any) -> str:
