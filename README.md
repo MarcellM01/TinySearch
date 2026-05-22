@@ -4,12 +4,12 @@
   <img src="assets/tinysearch_logo.png" alt="TinySearch" width="240" />
 </p>
 
-[![License](https://img.shields.io/github/license/MarcellM01/TinySearch)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/MarcellM01/TinySearch?sort=semver)](https://github.com/MarcellM01/TinySearch/releases)
-[![Last commit](https://img.shields.io/github/last-commit/MarcellM01/TinySearch)](https://github.com/MarcellM01/TinySearch/commits/main)
-[![MCP](https://img.shields.io/badge/MCP-research%20tool-222222)](https://modelcontextprotocol.io/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![TinySearch MCP server](https://glama.ai/mcp/servers/MarcellM01/TinySearch/badges/score.svg)](https://glama.ai/mcp/servers/MarcellM01/TinySearch)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/MarcellM01/TinySearch?label=release)](https://github.com/MarcellM01/TinySearch/releases)
+[![Last Commit](https://img.shields.io/github/last-commit/MarcellM01/TinySearch)](https://github.com/MarcellM01/TinySearch/commits/main)
+[![Docker Pulls](https://img.shields.io/docker/pulls/marcellm01/tinysearch?label=docker%20pulls)](https://hub.docker.com/r/marcellm01/tinysearch)
+![MCP Server](https://img.shields.io/badge/MCP-server-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-supported-009688)
 
 A tiny local-first web research engine for MCP agents.
 
