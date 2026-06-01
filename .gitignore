@@ -16,5 +16,5 @@ models/*
 
 .githooks/
 
-# Local CLI helper
-search.py
+# Local CLI helpers
+*.local.py
