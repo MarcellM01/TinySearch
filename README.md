@@ -184,7 +184,8 @@ connect, try `MCP_TRANSPORT=sse` alone or the stdio Docker setup below.
 ### Persistent models and config
 
 For repeated use, keep downloaded models in a Docker volume and mount your local
-config:
+config. The mounted config can also include `blocked_domains` to exclude sites
+from search results:
 
 ```bash
 docker run --rm \
@@ -195,6 +196,12 @@ docker run --rm \
   -e MCP_TRANSPORT=streamable-http \
   -e MCP_HOST=0.0.0.0 \
   marcellm01/tinysearch:latest
+```
+
+Example config entry:
+
+```json
+"blocked_domains": ["example.com", "spammy-site.test"]
 ```
 
 ### MCP over stdio
@@ -252,6 +259,11 @@ Tune research defaults in `configs/research_config.json`. Set
 `TINYSEARCH_CONFIG_PATH` to load a different JSON config file, which is the
 recommended Docker override pattern.
 
+Set `blocked_domains` to a JSON list of domains you do not want TinySearch to
+return or crawl. Entries match the domain and its subdomains, so `example.com`
+also blocks `www.example.com` and `news.example.com`. URL-style entries such as
+`https://example.com/path` are accepted and normalized to their hostname.
+
 The `onnx` embedding backend uses local ONNX bundles under `models/`. Starting
 the MCP server or FastAPI app downloads the configured `embedding_model` once
 from Hugging Face when `embedding_backend` is `onnx`.
@@ -268,7 +280,7 @@ You can also set `embedding_model` to a custom Hugging Face ONNX repo id. Set
 
 Key settings:
 
-- Search: `search_top_k`, `search_rrf_cutoff`, `search_dense_weight`, `search_max_results_to_keep`
+- Search: `search_top_k`, `search_rrf_cutoff`, `search_dense_weight`, `search_max_results_to_keep`, `blocked_domains`
 - Chunks: `chunk_rrf_cutoff`, `chunk_dense_weight`, `chunk_max_results_to_keep`
 - Crawl: `crawl_max_chunk_tokens`, `crawl_overlap_tokens`, `max_concurrent_crawls`
 - Embeddings: `embedding_backend`, `embedding_model`, `embedding_openai_env_file`, `max_concurrent_embedding_calls`

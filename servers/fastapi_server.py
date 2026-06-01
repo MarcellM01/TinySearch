@@ -21,7 +21,11 @@ from services.research_config_service import (
     research_tokenizer_name,
 )
 from services.site_crawl_service import crawl_search
-from services.web_search_service import search, search_to_markdown
+from services.web_search_service import (
+    filter_blocked_search_results,
+    search,
+    search_to_markdown,
+)
 
 
 async def _ensure_local_bundle_for_config(config: dict[str, Any]) -> None:
@@ -106,7 +110,11 @@ async def health() -> dict[str, str]:
 
 @app.post("/web_search")
 async def web_search_endpoint(request: WebSearchRequest) -> dict[str, Any]:
-    results = search(request.query, limit=request.limit)
+    config = load_research_config()
+    results = filter_blocked_search_results(
+        search(request.query, limit=request.limit),
+        config["blocked_domains"],
+    )
     payload: dict[str, Any] = {
         "query": request.query,
         "results": [result.__dict__ for result in results],
@@ -250,6 +258,7 @@ async def research_endpoint(request: ResearchRequest) -> dict[str, Any]:
         dense_document_embed_batch_size=request.dense_document_embed_batch_size
         if request.dense_document_embed_batch_size is not None
         else int(config["dense_document_embed_batch_size"]),
+        blocked_domains=config["blocked_domains"],
         encoding_name=request.encoding_name or str(config["encoding_name"]),
         trace_path=Path(request.trace_path) if request.trace_path else config_trace_path(config),
     )

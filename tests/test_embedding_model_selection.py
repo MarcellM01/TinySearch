@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
@@ -92,6 +93,32 @@ class EmbeddingModelSelectionTests(unittest.TestCase):
 
         self.assertEqual(cfg["embedding_model"], "balanced")
         self.assertEqual(cfg["embedding_backend"], "onnx")
+
+    def test_config_path_env_loads_blocked_domains(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            config_path = Path(td) / "research_config.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "embedding_backend": "onnx",
+                        "embedding_model": "balanced",
+                        "blocked_domains": [
+                            "example.com",
+                            "",
+                            "https://spammy-site.test/path",
+                            None,
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with patch.dict(os.environ, {"TINYSEARCH_CONFIG_PATH": str(config_path)}):
+                cfg = load_research_config()
+
+        self.assertEqual(
+            cfg["blocked_domains"],
+            ["example.com", "spammy-site.test"],
+        )
 
     def test_embedding_tokenizer_uses_selected_model_bundle_dir(self) -> None:
         cfg = {

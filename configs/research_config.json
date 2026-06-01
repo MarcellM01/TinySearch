@@ -28,5 +28,6 @@
   "dense_query_prefix": "",
   "dense_document_prefix": "",
   "dense_document_embed_batch_size": 32,
+  "blocked_domains": [],
   "trace_path": "trace_logs/agentic_trace.json"
 }
