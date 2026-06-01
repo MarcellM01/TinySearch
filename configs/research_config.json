@@ -11,6 +11,7 @@
   "chunk_max_per_source_url": 4,
   "max_concurrent_crawls": 5,
   "max_concurrent_embedding_calls": 4,
+  "pipeline_timeout_seconds": 120.0,
   "embedding_timeout_seconds": 60.0,
   "embedding_timeout_retries": 2,
   "crawl_fit_markdown_mode": "bm25",
