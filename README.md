@@ -181,6 +181,13 @@ With `MCP_TRANSPORT=streamable-http`, the image serves Streamable HTTP on
 `mcp-session-id` are treated as the legacy SSE stream. If a client still cannot
 connect, try `MCP_TRANSPORT=sse` alone or the stdio Docker setup below.
 
+### Docker image tags
+
+Docker images are published automatically when a version tag or GitHub release is created.
+
+- `marcellm01/tinysearch:<version>` is published for tags such as `v0.1.3`.
+- `marcellm01/tinysearch:latest` is updated for stable releases.
+- Images are built for both `linux/amd64` and `linux/arm64`.
 ### Persistent models and config
 
 For repeated use, keep downloaded models in a Docker volume and mount your local
