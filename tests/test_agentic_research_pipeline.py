@@ -202,6 +202,46 @@ class AgenticResearchPipelineTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(seen_encoding_names, ["embedding-tokenizer"])
 
+    async def test_pipeline_timeout_returns_graceful_result(self) -> None:
+        import asyncio as _asyncio
+
+        async def slow_crawl(**kwargs):
+            await _asyncio.sleep(10)
+            return await _fake_crawl(**kwargs)
+
+        result = await agentic_run(
+            "python async search",
+            search_top_k=1,
+            search_max_results_to_keep=1,
+            chunk_max_results_to_keep=1,
+            crawl_max_chunk_tokens=40,
+            crawl_overlap_tokens=0,
+            embedder=_fake_embedder,
+            search_fn=_fake_search,
+            crawl_fn=slow_crawl,
+            pipeline_timeout_seconds=0.1,
+        )
+
+        self.assertIn("QUESTION", result.answer)
+        self.assertIn("python async search", result.answer)
+        self.assertNotIn("RESULT 1", result.answer)
+
+    async def test_pipeline_no_timeout_when_none(self) -> None:
+        result = await agentic_run(
+            "python async search",
+            search_top_k=1,
+            search_max_results_to_keep=1,
+            chunk_max_results_to_keep=1,
+            crawl_max_chunk_tokens=40,
+            crawl_overlap_tokens=0,
+            embedder=_fake_embedder,
+            search_fn=_fake_search,
+            crawl_fn=_fake_crawl,
+            pipeline_timeout_seconds=None,
+        )
+
+        self.assertIn("RESULT 1", result.answer)
+
     async def test_pipeline_rejects_bm25_only_configuration(self) -> None:
         with self.assertRaises(ValueError):
             await agentic_run(

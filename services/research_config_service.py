@@ -32,6 +32,7 @@ DEFAULT_RESEARCH_CONFIG: dict[str, Any] = {
     "chunk_max_per_source_url": 4,
     "max_concurrent_crawls": 5,
     "max_concurrent_embedding_calls": 3,
+    "pipeline_timeout_seconds": 120.0,
     "embedding_timeout_seconds": 60.0,
     "embedding_timeout_retries": 2,
     "crawl_fit_markdown_mode": "bm25",
@@ -89,6 +90,8 @@ def _coerce_config(raw: dict[str, Any]) -> dict[str, Any]:
         config[key] = int(config[key])
     for key in _FLOAT_FIELDS:
         config[key] = float(config[key])
+    raw_timeout = config.get("pipeline_timeout_seconds")
+    config["pipeline_timeout_seconds"] = float(raw_timeout) if raw_timeout is not None else None
     for key in (
         "encoding_name",
         "embedding_backend",
@@ -145,6 +148,7 @@ def research_run_kwargs(config: dict[str, Any] | None = None) -> dict[str, Any]:
         "chunk_max_per_source_url",
         "max_concurrent_crawls",
         "max_concurrent_embedding_calls",
+        "pipeline_timeout_seconds",
         "embedding_timeout_seconds",
         "embedding_timeout_retries",
         "crawl_fit_markdown_mode",
