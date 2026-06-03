@@ -2,6 +2,7 @@ import asyncio
 import html as _html
 import re
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
@@ -33,6 +34,41 @@ class SearchResult:
     title: str
     url: str
     text: str
+
+
+def normalize_domain(value: str) -> str:
+    raw = value.strip().lower()
+    if not raw:
+        return ""
+    parsed = urlparse(raw if "://" in raw or raw.startswith("//") else f"//{raw}")
+    host = (parsed.hostname or "").strip().lower().rstrip(".")
+    if not host or any(char.isspace() for char in host):
+        return ""
+    return host.removeprefix("www.")
+
+
+def is_blocked_domain(url: str, blocked_domains: Iterable[str]) -> bool:
+    host = normalize_domain(url)
+    if not host:
+        return False
+    for blocked in blocked_domains:
+        blocked_host = normalize_domain(blocked)
+        if not blocked_host:
+            continue
+        if host == blocked_host or host.endswith(f".{blocked_host}"):
+            return True
+    return False
+
+
+def filter_blocked_search_results(
+    search_results: list[SearchResult],
+    blocked_domains: Iterable[str],
+) -> list[SearchResult]:
+    return [
+        result
+        for result in search_results
+        if not is_blocked_domain(result.url, blocked_domains)
+    ]
 
 
 def _strip_tags(s: str) -> str:

@@ -37,10 +37,18 @@ from services.embedding_service import (
 )
 from services.chunk_pool_selection_service import select_chunks_with_quota_and_fill
 from services.hybrid_embed_search_service import EmbeddingFn, rank_chunks_hybrid
-from services.research_config_service import config_trace_path, load_research_config, research_run_kwargs
+from services.research_config_service import (
+    config_trace_path,
+    load_research_config,
+    research_run_kwargs,
+)
 from services.site_crawl_service import crawl
 from services.text_chunking_service import chunk_text, truncate_text_to_max_tokens
-from services.web_search_service import SearchResult, search
+from services.web_search_service import (
+    SearchResult,
+    filter_blocked_search_results,
+    search,
+)
 
 
 ProgressCallback = Callable[[str, dict[str, Any]], Awaitable[None]]
@@ -297,6 +305,7 @@ async def agentic_run(
     dense_query_prefix: str = DEFAULT_DENSE_QUERY_PREFIX,
     dense_document_prefix: str = DEFAULT_DENSE_DOCUMENT_PREFIX,
     dense_document_embed_batch_size: int | None = 32,
+    blocked_domains: Sequence[str] | None = None,
     trace_path: str | Path | None = None,
     progress_callback: ProgressCallback | None = None,
     embedder: EmbeddingFn | None = None,
@@ -384,6 +393,7 @@ async def agentic_run(
             "dense_query_prefix": dense_query_prefix,
             "dense_document_prefix": dense_document_prefix,
             "dense_document_embed_batch_size": dense_document_embed_batch_size,
+            "blocked_domains": list(blocked_domains or []),
         },
         "web_search": [],
         "ranked_search_results": [],
@@ -405,6 +415,30 @@ async def agentic_run(
         _write_trace(trace_path, trace)
         return AgenticResult(answer=answer)
 
+    _agentic_log(f"start query={query!r}")
+    await emit("start", query=query)
+    await emit("search_start", query=query, search_top_k=search_top_k)
+    _agentic_log(f"search start top_k={search_top_k}")
+    results = [result for result in search_fn(query, max(1, search_top_k)) if _is_http_url(result.url)]
+    results = filter_blocked_search_results(results, blocked_domains or [])
+    _agentic_log(f"search done results={len(results)}")
+    trace["web_search"] = [asdict(result) for result in results]
+    await emit("search_results", results_count=len(results))
+
+    if not results:
+        prompt = _format_results_prompt(question=query, results=[])
+        return finish("no_search_results", prompt, [])
+
+    tokenizer_name = (
+        str(encoding_name).strip()
+        if encoding_name is not None and str(encoding_name).strip().lower() != "embedding"
+        else resolve_embedding_tokenizer_name(
+            backend=embedding_backend,
+            embedding_model=embedding_model,
+            openai_env_file=env_file if embedding_backend == "openai_compatible" else None,
+        )
+    )
+    trace["config"]["tokenizer_name"] = tokenizer_name
     try:
         async with asyncio.timeout(pipeline_timeout_seconds):
             _agentic_log(f"start query={query!r}")

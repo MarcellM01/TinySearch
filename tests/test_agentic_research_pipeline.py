@@ -110,6 +110,54 @@ class AgenticResearchPipelineTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("RESULT 1", result.answer)
         self.assertNotIn("RELEVANT TEXT 1", result.answer)
 
+    async def test_pipeline_filters_blocked_domains_before_crawling(self) -> None:
+        crawled_urls: list[str] = []
+
+        def search_with_blocked_result(query: str, limit: int) -> list[SearchResult]:
+            return [
+                SearchResult(
+                    result_id=1,
+                    title="Blocked Python",
+                    url="https://blocked.example/python",
+                    text="Python asyncio search guide.",
+                ),
+                SearchResult(
+                    result_id=2,
+                    title="Allowed Python",
+                    url="https://allowed.example/python",
+                    text="Python asyncio search guide.",
+                ),
+            ][:limit]
+
+        async def recording_crawl(**kwargs):
+            url = kwargs["url"]
+            crawled_urls.append(url)
+            return {
+                "url": url,
+                "markdown": "Python asyncio search uses async tasks.",
+                "markdown_raw": "Python asyncio search uses async tasks.",
+                "html": "",
+                "tokens_raw": 10,
+            }
+
+        result = await agentic_run(
+            "python async search",
+            search_top_k=2,
+            search_max_results_to_keep=2,
+            chunk_max_results_to_keep=1,
+            crawl_max_chunk_tokens=40,
+            crawl_overlap_tokens=0,
+            blocked_domains=["blocked.example"],
+            embedder=_fake_embedder,
+            search_fn=search_with_blocked_result,
+            crawl_fn=recording_crawl,
+        )
+
+        self.assertEqual(crawled_urls, ["https://allowed.example/python"])
+        self.assertIn("Allowed Python", result.answer)
+        self.assertNotIn("Blocked Python", result.answer)
+        self.assertNotIn("https://blocked.example/python", result.answer)
+
     async def test_pipeline_ranks_chunks_in_one_global_pool(self) -> None:
         result = await agentic_run(
             "python async search",

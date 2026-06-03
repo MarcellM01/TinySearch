@@ -13,6 +13,7 @@ from services.embedding_service import (
     resolve_local_embedding_model_spec,
     resolve_embedding_tokenizer_name,
 )
+from services.web_search_service import normalize_domain
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -49,6 +50,7 @@ DEFAULT_RESEARCH_CONFIG: dict[str, Any] = {
     "dense_query_prefix": "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:",
     "dense_document_prefix": "",
     "dense_document_embed_batch_size": 32,
+    "blocked_domains": [],
     "trace_path": "trace_logs/agentic_trace.json",
 }
 
@@ -103,6 +105,18 @@ def _coerce_config(raw: dict[str, Any]) -> dict[str, Any]:
     ):
         if config.get(key) is not None:
             config[key] = str(config[key])
+    blocked_domains = config.get("blocked_domains", [])
+    if not isinstance(blocked_domains, list):
+        raise ValueError("research config blocked_domains must be a JSON list")
+    config["blocked_domains"] = list(
+        dict.fromkeys(
+            normalized
+            for item in blocked_domains
+            if isinstance(item, str)
+            for normalized in [normalize_domain(item)]
+            if normalized
+        )
+    )
     return config
 
 
@@ -152,6 +166,7 @@ def research_run_kwargs(config: dict[str, Any] | None = None) -> dict[str, Any]:
         "dense_query_prefix",
         "dense_document_prefix",
         "dense_document_embed_batch_size",
+        "blocked_domains",
     )
     return {key: config[key] for key in keys}
 
