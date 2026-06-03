@@ -1,5 +1,8 @@
 # TinySearch
 
+> [!WARNING]
+> TinySearch is temporarily affected by DuckDuckGo limiting automated searches from some environments. We are switching the search layer to SearxNG. Please give us a few days and we will be back with a more reliable setup.
+
 <p align="center">
   <img src="assets/tinysearch_logo.png" alt="TinySearch" width="240" />
 </p>
