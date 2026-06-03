@@ -415,30 +415,6 @@ async def agentic_run(
         _write_trace(trace_path, trace)
         return AgenticResult(answer=answer)
 
-    _agentic_log(f"start query={query!r}")
-    await emit("start", query=query)
-    await emit("search_start", query=query, search_top_k=search_top_k)
-    _agentic_log(f"search start top_k={search_top_k}")
-    results = [result for result in search_fn(query, max(1, search_top_k)) if _is_http_url(result.url)]
-    results = filter_blocked_search_results(results, blocked_domains or [])
-    _agentic_log(f"search done results={len(results)}")
-    trace["web_search"] = [asdict(result) for result in results]
-    await emit("search_results", results_count=len(results))
-
-    if not results:
-        prompt = _format_results_prompt(question=query, results=[])
-        return finish("no_search_results", prompt, [])
-
-    tokenizer_name = (
-        str(encoding_name).strip()
-        if encoding_name is not None and str(encoding_name).strip().lower() != "embedding"
-        else resolve_embedding_tokenizer_name(
-            backend=embedding_backend,
-            embedding_model=embedding_model,
-            openai_env_file=env_file if embedding_backend == "openai_compatible" else None,
-        )
-    )
-    trace["config"]["tokenizer_name"] = tokenizer_name
     try:
         async with asyncio.timeout(pipeline_timeout_seconds):
             _agentic_log(f"start query={query!r}")
@@ -446,6 +422,7 @@ async def agentic_run(
             await emit("search_start", query=query, search_top_k=search_top_k)
             _agentic_log(f"search start top_k={search_top_k}")
             results = [result for result in search_fn(query, max(1, search_top_k)) if _is_http_url(result.url)]
+            results = filter_blocked_search_results(results, blocked_domains or [])
             _agentic_log(f"search done results={len(results)}")
             trace["web_search"] = [asdict(result) for result in results]
             await emit("search_results", results_count=len(results))
