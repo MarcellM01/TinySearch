@@ -46,7 +46,7 @@ async def _lifespan(_app: FastAPI):
 app = FastAPI(
     title="TinySearch API",
     description="Web search, site crawl, and hybrid research endpoints.",
-    version="0.1.0",
+    version="0.1.4",
     lifespan=_lifespan,
 )
 

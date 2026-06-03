@@ -185,7 +185,7 @@ connect, try `MCP_TRANSPORT=sse` alone or the stdio Docker setup below.
 
 Docker images are published automatically when a version tag or GitHub release is created.
 
-- `marcellm01/tinysearch:<version>` is published for tags such as `v0.1.3`.
+- `marcellm01/tinysearch:<version>` is published for tags such as `v0.1.4`.
 - `marcellm01/tinysearch:latest` is updated for stable releases.
 - Images are built for both `linux/amd64` and `linux/arm64`.
 ### Persistent models and config
