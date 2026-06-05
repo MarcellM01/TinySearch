@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from pipelines.agentic_research import agentic_run
-from services.web_search_service import SearchResult
+from services.web_search_service import (
+    SearchBackendUnavailable,
+    SearchResult,
+)
 
 
 def _fake_search(query: str, limit: int) -> list[SearchResult]:
@@ -251,6 +257,27 @@ class AgenticResearchPipelineTests(unittest.IsolatedAsyncioTestCase):
                 search_fn=_fake_search,
                 crawl_fn=_fake_crawl,
             )
+
+    async def test_pipeline_reports_distinct_status_when_backend_fails(self) -> None:
+        def failing_search(query: str, limit: int) -> list[SearchResult]:
+            raise SearchBackendUnavailable("all backends down")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            trace_path = Path(tmp) / "trace.json"
+            result = await agentic_run(
+                "python async search",
+                search_top_k=1,
+                search_max_results_to_keep=1,
+                embedder=_fake_embedder,
+                search_fn=failing_search,
+                crawl_fn=_fake_crawl,
+                trace_path=str(trace_path),
+            )
+
+            self.assertIn("QUESTION", result.answer)
+            self.assertNotIn("RESULT 1", result.answer)
+            trace = json.loads(trace_path.read_text(encoding="utf-8"))
+            self.assertEqual(trace["status"], "search_backend_error")
 
     async def test_pipeline_propagates_embedding_failures(self) -> None:
         call_count = 0

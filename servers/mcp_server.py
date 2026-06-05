@@ -132,7 +132,8 @@ Pass the user's question as-is in query. Do not rewrite, correct spelling,
 expand abbreviations, add dates, add missing context, simplify, translate, or
 otherwise improve the user's wording before calling the tool.
 
-The tool searches DuckDuckGo, ranks search results with dense embeddings and
+The tool runs a web search through the configured backend (SearXNG by default,
+with a DuckDuckGo fallback), ranks search results with dense embeddings and
 BM25 using reciprocal rank fusion, crawls kept pages, ranks page chunks, and
 returns a prompt in the answer field. The caller's LLM should answer from that
 prompt and cite source URLs from the result blocks.

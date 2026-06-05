@@ -1,12 +1,17 @@
+from __future__ import annotations
+
 import asyncio
 import html as _html
+import json
 import re
+import socket
 import sys
-from collections.abc import Iterable
+import urllib.error
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
-from urllib.parse import parse_qs, quote_plus, unquote, urlparse
+from urllib.parse import parse_qs, quote_plus, unquote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -34,6 +39,33 @@ class SearchResult:
     title: str
     url: str
     text: str
+
+
+class SearchBackendError(Exception):
+    """Base error raised when a search backend fails to produce results."""
+
+
+class SearchBackendUnavailable(SearchBackendError):
+    """Network, timeout, non-200, or non-JSON response from a backend."""
+
+
+class SearchBackendBlocked(SearchBackendError):
+    """Backend rejected the request (HTTP 403/429 or CAPTCHA/challenge page)."""
+
+
+ALLOWED_SEARCH_BACKENDS: frozenset[str] = frozenset({"searxng", "duckduckgo", "auto"})
+DEFAULT_SEARXNG_URL = "http://searxng:8080/search"
+_DEFAULT_DDG_TIMEOUT = 20.0
+_DEFAULT_SEARXNG_TIMEOUT = 8.0
+
+_DDG_CHALLENGE_MARKERS: tuple[str, ...] = (
+    "anomaly-modal",
+    "anomaly_modal",
+    "captcha-container",
+    "challenge-form",
+    "automated queries",
+    "unusual traffic",
+)
 
 
 def normalize_domain(value: str) -> str:
@@ -89,7 +121,7 @@ def _decode_duckduckgo_href(href: str) -> str:
     return href
 
 
-def _http_get(url: str) -> str:
+def _http_get(url: str, *, timeout: float = _DEFAULT_DDG_TIMEOUT) -> str:
     req = Request(
         url,
         headers={
@@ -97,10 +129,15 @@ def _http_get(url: str) -> str:
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         },
     )
-    with urlopen(req, timeout=20) as resp:
+    with urlopen(req, timeout=timeout) as resp:
         raw = resp.read()
         charset = getattr(resp.headers, "get_content_charset", lambda default=None: None)("utf-8") or "utf-8"
     return raw.decode(charset, errors="replace")
+
+
+def _looks_like_ddg_challenge(html: str) -> bool:
+    lowered = html.lower()
+    return any(marker in lowered for marker in _DDG_CHALLENGE_MARKERS)
 
 
 async def crawl(url: str) -> dict:
@@ -120,17 +157,28 @@ async def crawl(url: str) -> dict:
     return {"url": url, "markdown": markdown, "html": html, "links": links}
 
 
-def search(query: str, limit: int = 10) -> list[SearchResult]:
-    """
-    Query DuckDuckGo's HTML endpoint and return the top results.
-
-    Returns items shaped like:
-      Title:
-      URL:
-      Text:
-    """
+def _duckduckgo_search(query: str, limit: int) -> list[SearchResult]:
+    """Query DuckDuckGo's HTML endpoint and return the top results."""
     url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
-    html = _http_get(url)
+    try:
+        html = _http_get(url, timeout=_DEFAULT_DDG_TIMEOUT)
+    except urllib.error.HTTPError as exc:
+        if exc.code in (403, 429):
+            raise SearchBackendBlocked(
+                f"DuckDuckGo refused the request (HTTP {exc.code})"
+            ) from exc
+        raise SearchBackendUnavailable(
+            f"DuckDuckGo returned HTTP {exc.code}"
+        ) from exc
+    except (urllib.error.URLError, socket.timeout, TimeoutError, OSError) as exc:
+        raise SearchBackendUnavailable(
+            f"DuckDuckGo unreachable: {exc}"
+        ) from exc
+
+    if _looks_like_ddg_challenge(html):
+        raise SearchBackendBlocked(
+            "DuckDuckGo returned a CAPTCHA/challenge page"
+        )
 
     # DDG HTML results use anchors like: <a class="result__a" href="...">Title</a>
     matches = re.findall(
@@ -160,6 +208,165 @@ def search(query: str, limit: int = 10) -> list[SearchResult]:
             break
 
     return out
+
+
+def _normalize_engines(engines: Any) -> str:
+    if engines is None:
+        return ""
+    if isinstance(engines, str):
+        parts = [part.strip() for part in engines.split(",")]
+    elif isinstance(engines, Sequence):
+        parts = [str(part).strip() for part in engines]
+    else:
+        parts = [str(engines).strip()]
+    return ",".join(part for part in parts if part)
+
+
+def _searxng_search(
+    query: str,
+    limit: int,
+    *,
+    url: str,
+    engines: Any = None,
+    region: str | None = None,
+    timeout: float = _DEFAULT_SEARXNG_TIMEOUT,
+) -> list[SearchResult]:
+    """Query a SearXNG-compatible JSON endpoint."""
+    if not url or not url.strip():
+        raise SearchBackendUnavailable("SearXNG search_backend_url is empty")
+
+    params: list[tuple[str, str]] = [
+        ("q", query),
+        ("format", "json"),
+        ("pageno", "1"),
+    ]
+    engines_str = _normalize_engines(engines)
+    if engines_str:
+        params.append(("engines", engines_str))
+    if region:
+        params.append(("language", str(region)))
+
+    full_url = f"{url}?{urlencode(params)}"
+    req = Request(
+        full_url,
+        headers={
+            "User-Agent": "TinySearch/0.1 (+searxng)",
+            "Accept": "application/json",
+        },
+    )
+
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            raw = resp.read()
+            content_type = resp.headers.get("Content-Type", "") or ""
+    except urllib.error.HTTPError as exc:
+        raise SearchBackendUnavailable(
+            f"SearXNG returned HTTP {exc.code} from {url}"
+        ) from exc
+    except (urllib.error.URLError, socket.timeout, TimeoutError, OSError) as exc:
+        raise SearchBackendUnavailable(
+            f"SearXNG unreachable at {url}: {exc}"
+        ) from exc
+
+    text = raw.decode("utf-8", errors="replace")
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise SearchBackendUnavailable(
+            "SearXNG did not return JSON "
+            f"(content-type={content_type!r}). "
+            "Enable JSON output by adding 'json' to search.formats in searxng settings.yml."
+        ) from exc
+
+    if not isinstance(payload, dict):
+        raise SearchBackendUnavailable("SearXNG JSON payload was not an object")
+
+    raw_results = payload.get("results") or []
+    if not isinstance(raw_results, list):
+        raise SearchBackendUnavailable("SearXNG 'results' field was not a list")
+
+    out: list[SearchResult] = []
+    for item in raw_results:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title") or "").strip()
+        target = str(item.get("url") or "").strip()
+        text_field = str(item.get("content") or "").strip()
+        if not title or not target:
+            continue
+        out.append(
+            SearchResult(
+                result_id=len(out) + 1,
+                title=title,
+                url=target,
+                text=text_field,
+            )
+        )
+        if len(out) >= limit:
+            break
+
+    return out
+
+
+def _load_search_config() -> dict[str, Any]:
+    # Lazy import to avoid a circular dependency with research_config_service.
+    from services.research_config_service import load_research_config
+
+    return load_research_config()
+
+
+def _dispatch_search(
+    query: str,
+    limit: int,
+    *,
+    config: dict[str, Any],
+) -> list[SearchResult]:
+    backend = str(config.get("search_backend") or "searxng").strip().lower()
+    if backend not in ALLOWED_SEARCH_BACKENDS:
+        backend = "searxng"
+    url = str(config.get("search_backend_url") or DEFAULT_SEARXNG_URL)
+    engines = config.get("search_engines")
+    region = (
+        config.get("search_region")
+        or config.get("search_country")
+        or ""
+    )
+    fallback_enabled = bool(config.get("search_backend_fallback", True))
+
+    if backend == "duckduckgo":
+        return _duckduckgo_search(query, limit)
+
+    if backend == "auto":
+        try:
+            return _searxng_search(
+                query, limit, url=url, engines=engines, region=str(region) or None
+            )
+        except SearchBackendError:
+            return _duckduckgo_search(query, limit)
+
+    # backend == "searxng"
+    try:
+        return _searxng_search(
+            query, limit, url=url, engines=engines, region=str(region) or None
+        )
+    except SearchBackendError:
+        if fallback_enabled:
+            return _duckduckgo_search(query, limit)
+        raise
+
+
+def search(query: str, limit: int = 10) -> list[SearchResult]:
+    """
+    Run a web search using the configured backend.
+
+    Returns items shaped like:
+      Title:
+      URL:
+      Text:
+    """
+    config = _load_search_config()
+    return _dispatch_search(query, limit, config=config)
+
 
 def search_to_markdown(search_results: list[SearchResult]) -> str:
     markdown = ""
