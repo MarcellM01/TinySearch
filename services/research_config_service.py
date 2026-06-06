@@ -218,6 +218,13 @@ def research_run_kwargs(config: dict[str, Any] | None = None) -> dict[str, Any]:
     return {key: config[key] for key in keys}
 
 
+def normalize_research_query(query: str) -> str:
+    query = query.strip()
+    if not query:
+        raise ValueError("query must not be empty")
+    return query
+
+
 def research_embedding_model_info(config: dict[str, Any] | None = None) -> dict[str, str]:
     config = load_research_config() if config is None else config
     backend = normalize_embedding_backend(str(config["embedding_backend"]))

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -18,6 +19,8 @@ from services.embedding_service import normalize_embedding_backend
 from services.research_config_service import (
     config_trace_path,
     load_research_config,
+    normalize_research_query,
+    research_run_kwargs,
     research_tokenizer_name,
 )
 from services.site_crawl_service import crawl_search
@@ -36,6 +39,10 @@ async def _ensure_local_bundle_for_config(config: dict[str, Any]) -> None:
     await asyncio.to_thread(ensure_onnx_bundle_sync, str(config["embedding_model"]))
 
 
+def _tinysearch_version() -> str:
+    return os.environ.get("TINYSEARCH_VERSION", "dev").strip() or "dev"
+
+
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
     cfg = load_research_config()
@@ -46,7 +53,7 @@ async def _lifespan(_app: FastAPI):
 app = FastAPI(
     title="TinySearch API",
     description="Web search, site crawl, and hybrid research endpoints.",
-    version="0.1.4",
+    version=_tinysearch_version(),
     lifespan=_lifespan,
 )
 
@@ -85,6 +92,7 @@ class ResearchRequest(BaseModel):
     chunk_max_per_source_url: int | None = Field(default=None, ge=0, le=500)
     max_concurrent_crawls: int | None = Field(default=None, ge=1, le=20)
     max_concurrent_embedding_calls: int | None = Field(default=None, ge=1, le=20)
+    pipeline_timeout_seconds: float | None = Field(default=None, gt=0)
     embedding_timeout_seconds: float | None = Field(default=None, gt=0)
     embedding_timeout_retries: int | None = Field(default=None, ge=0, le=10)
     crawl_fit_markdown_mode: str | None = None
@@ -173,94 +181,22 @@ async def site_crawl_get(
 @app.post("/research")
 async def research_endpoint(request: ResearchRequest) -> dict[str, Any]:
     config = load_research_config()
-    embedding_model = request.embedding_model or str(config["embedding_model"])
+    query = normalize_research_query(request.query)
+    overrides = request.model_dump(exclude_none=True)
+    overrides.pop("query")
+    trace_path = overrides.pop("trace_path", None)
+
+    run_kwargs = research_run_kwargs(config)
+    run_kwargs.update(overrides)
+    embedding_model = str(run_kwargs["embedding_model"])
     if normalize_embedding_backend(str(config["embedding_backend"])) == "onnx":
         from services.onnx_bundle_service import ensure_onnx_bundle_sync
 
         await asyncio.to_thread(ensure_onnx_bundle_sync, embedding_model)
     result = await agentic_run(
-        request.query,
-        search_top_k=request.search_top_k or int(config["search_top_k"]),
-        search_rrf_cutoff=request.search_rrf_cutoff
-        if request.search_rrf_cutoff is not None
-        else float(config["search_rrf_cutoff"]),
-        search_dense_weight=request.search_dense_weight
-        if request.search_dense_weight is not None
-        else float(config["search_dense_weight"]),
-        search_max_results_to_keep=request.search_max_results_to_keep
-        or int(config["search_max_results_to_keep"]),
-        chunk_rrf_cutoff=request.chunk_rrf_cutoff
-        if request.chunk_rrf_cutoff is not None
-        else float(config["chunk_rrf_cutoff"]),
-        chunk_dense_weight=request.chunk_dense_weight
-        if request.chunk_dense_weight is not None
-        else float(config["chunk_dense_weight"]),
-        chunk_max_results_to_keep=request.chunk_max_results_to_keep
-        or int(config["chunk_max_results_to_keep"]),
-        chunk_rank_oversample=request.chunk_rank_oversample
-        or int(config["chunk_rank_oversample"]),
-        chunk_dedupe_jaccard_threshold=request.chunk_dedupe_jaccard_threshold
-        if request.chunk_dedupe_jaccard_threshold is not None
-        else float(config["chunk_dedupe_jaccard_threshold"]),
-        chunk_max_per_source_url=request.chunk_max_per_source_url
-        if request.chunk_max_per_source_url is not None
-        else int(config["chunk_max_per_source_url"]),
-        max_concurrent_crawls=request.max_concurrent_crawls
-        or int(config["max_concurrent_crawls"]),
-        max_concurrent_embedding_calls=request.max_concurrent_embedding_calls
-        or int(config["max_concurrent_embedding_calls"]),
-        embedding_timeout_seconds=request.embedding_timeout_seconds
-        if request.embedding_timeout_seconds is not None
-        else float(config["embedding_timeout_seconds"]),
-        embedding_timeout_retries=request.embedding_timeout_retries
-        if request.embedding_timeout_retries is not None
-        else int(config["embedding_timeout_retries"]),
-        crawl_max_chunk_tokens=request.crawl_max_chunk_tokens
-        or int(config["crawl_max_chunk_tokens"]),
-        crawl_overlap_tokens=request.crawl_overlap_tokens
-        if request.crawl_overlap_tokens is not None
-        else int(config["crawl_overlap_tokens"]),
-        crawl_max_page_tokens=request.crawl_max_page_tokens
-        if request.crawl_max_page_tokens is not None
-        else int(config["crawl_max_page_tokens"]),
-        crawl_fit_markdown_mode=(
-            request.crawl_fit_markdown_mode
-            if request.crawl_fit_markdown_mode is not None
-            else str(config["crawl_fit_markdown_mode"])
-        ),
-        crawl_fit_min_chars=(
-            request.crawl_fit_min_chars
-            if request.crawl_fit_min_chars is not None
-            else int(config["crawl_fit_min_chars"])
-        ),
-        crawl_bm25_threshold=request.crawl_bm25_threshold
-        if request.crawl_bm25_threshold is not None
-        else float(config["crawl_bm25_threshold"]),
-        crawl_bm25_language=(
-            request.crawl_bm25_language
-            if request.crawl_bm25_language is not None
-            else str(config["crawl_bm25_language"])
-        ),
-        crawl_pruning_threshold=(
-            request.crawl_pruning_threshold
-            if request.crawl_pruning_threshold is not None
-            else float(config["crawl_pruning_threshold"])
-        ),
-        embedding_backend=str(config["embedding_backend"]),
-        embedding_model=embedding_model,
-        embedding_openai_env_file=str(config["embedding_openai_env_file"]),
-        dense_query_prefix=request.dense_query_prefix
-        if request.dense_query_prefix is not None
-        else str(config["dense_query_prefix"]),
-        dense_document_prefix=request.dense_document_prefix
-        if request.dense_document_prefix is not None
-        else str(config["dense_document_prefix"]),
-        dense_document_embed_batch_size=request.dense_document_embed_batch_size
-        if request.dense_document_embed_batch_size is not None
-        else int(config["dense_document_embed_batch_size"]),
-        blocked_domains=config["blocked_domains"],
-        encoding_name=request.encoding_name or str(config["encoding_name"]),
-        trace_path=Path(request.trace_path) if request.trace_path else config_trace_path(config),
+        query,
+        **run_kwargs,
+        trace_path=Path(trace_path) if trace_path else config_trace_path(config),
     )
     return {"answer": result.answer}
 

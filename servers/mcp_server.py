@@ -20,6 +20,7 @@ from services.embedding_service import normalize_embedding_backend
 from services.research_config_service import (
     config_trace_path,
     load_research_config,
+    normalize_research_query,
     research_run_kwargs,
     research_tokenizer_name,
 )
@@ -156,13 +157,6 @@ def _ensure_local_bundle_for_config(config: dict[str, Any]) -> None:
     ensure_onnx_bundle_sync(str(config["embedding_model"]))
 
 
-def _validate_query(query: str) -> str:
-    query = query.strip()
-    if not query:
-        raise ValueError("query must not be empty")
-    return query
-
-
 def _log(message: str) -> None:
     print(f"[tinysearch] {message}", file=sys.stderr, flush=True)
 
@@ -198,7 +192,7 @@ mcp = FastMCP(
     ),
 )
 async def research(query: str) -> dict[str, Any]:
-    query = _validate_query(query)
+    query = normalize_research_query(query)
     started = time.monotonic()
     _log(f"research called query={query!r}")
     try:

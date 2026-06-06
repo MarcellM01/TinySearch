@@ -11,6 +11,7 @@ LABEL org.opencontainers.image.title="TinySearch" \
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
+    TINYSEARCH_VERSION=${TINYSEARCH_VERSION} \
     TINYSEARCH_MODELS_DIR=/data/models \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
