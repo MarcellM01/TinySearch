@@ -13,7 +13,7 @@ from services.embedding_service import (
     resolve_local_embedding_model_spec,
     resolve_embedding_tokenizer_name,
 )
-from services.web_search_service import normalize_domain
+from services.web_search_service import ALLOWED_SEARCH_BACKENDS, DEFAULT_SEARXNG_URL, normalize_domain
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -51,6 +51,11 @@ DEFAULT_RESEARCH_CONFIG: dict[str, Any] = {
     "dense_document_prefix": "",
     "dense_document_embed_batch_size": 32,
     "blocked_domains": [],
+    "search_backend": "searxng",
+    "search_backend_url": DEFAULT_SEARXNG_URL,
+    "search_engines": [],
+    "search_region": "",
+    "search_backend_fallback": True,
     "trace_path": "trace_logs/agentic_trace.json",
 }
 
@@ -117,6 +122,48 @@ def _coerce_config(raw: dict[str, Any]) -> dict[str, Any]:
             if normalized
         )
     )
+
+    backend = str(config.get("search_backend") or "searxng").strip().lower()
+    if backend not in ALLOWED_SEARCH_BACKENDS:
+        raise ValueError(
+            "research config search_backend must be one of "
+            f"{sorted(ALLOWED_SEARCH_BACKENDS)}"
+        )
+    config["search_backend"] = backend
+
+    env_searxng_url = os.environ.get("SEARXNG_URL", "").strip()
+    if env_searxng_url:
+        config["search_backend_url"] = env_searxng_url
+    else:
+        config["search_backend_url"] = str(
+            config.get("search_backend_url") or DEFAULT_SEARXNG_URL
+        ).strip() or DEFAULT_SEARXNG_URL
+
+    engines_raw = config.get("search_engines")
+    if engines_raw is None or engines_raw == "":
+        engines_list: list[str] = []
+    elif isinstance(engines_raw, str):
+        engines_list = [part.strip() for part in engines_raw.split(",") if part.strip()]
+    elif isinstance(engines_raw, list):
+        engines_list = [
+            str(item).strip() for item in engines_raw if str(item).strip()
+        ]
+    else:
+        raise ValueError(
+            "research config search_engines must be a list or comma-separated string"
+        )
+    config["search_engines"] = engines_list
+
+    region_raw = config.get("search_region")
+    if not region_raw:
+        region_raw = config.get("search_country")
+    config["search_region"] = str(region_raw or "").strip()
+    config.pop("search_country", None)
+
+    config["search_backend_fallback"] = bool(
+        config.get("search_backend_fallback", True)
+    )
+
     return config
 
 

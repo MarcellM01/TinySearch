@@ -30,5 +30,10 @@
   "dense_document_prefix": "",
   "dense_document_embed_batch_size": 32,
   "blocked_domains": [],
+  "search_backend": "searxng",
+  "search_backend_url": "http://searxng:8080/search",
+  "search_engines": [],
+  "search_region": "",
+  "search_backend_fallback": true,
   "trace_path": "trace_logs/agentic_trace.json"
 }

@@ -18,6 +18,9 @@ services:
       MCP_TRANSPORT: streamable-http
       MCP_HOST: 0.0.0.0
       MCP_PORT: 8000
+      SEARXNG_URL: http://searxng:8080/search
+    depends_on:
+      - searxng
 
   fastapi:
     build:
@@ -37,6 +40,18 @@ services:
     environment:
       TINYSEARCH_MODELS_DIR: /data/models
       TINYSEARCH_CONFIG_PATH: /config/research_config.json
+      SEARXNG_URL: http://searxng:8080/search
+    depends_on:
+      - searxng
+
+  searxng:
+    image: searxng/searxng
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      INSTANCE_NAME: tinysearch-searxng
+      BASE_URL: http://localhost:8080/
+    restart: unless-stopped
 
 volumes:
   tinysearch-models:

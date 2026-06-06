@@ -45,6 +45,7 @@ from services.research_config_service import (
 from services.site_crawl_service import crawl
 from services.text_chunking_service import chunk_text, truncate_text_to_max_tokens
 from services.web_search_service import (
+    SearchBackendError,
     SearchResult,
     filter_blocked_search_results,
     search,
@@ -421,7 +422,14 @@ async def agentic_run(
             await emit("start", query=query)
             await emit("search_start", query=query, search_top_k=search_top_k)
             _agentic_log(f"search start top_k={search_top_k}")
-            results = [result for result in search_fn(query, max(1, search_top_k)) if _is_http_url(result.url)]
+            try:
+                raw_results = search_fn(query, max(1, search_top_k))
+            except SearchBackendError as exc:
+                _agentic_log(f"search backend error: {exc}")
+                await emit("search_backend_error", error=str(exc))
+                prompt = _format_results_prompt(question=query, results=[])
+                return finish("search_backend_error", prompt, [])
+            results = [result for result in raw_results if _is_http_url(result.url)]
             results = filter_blocked_search_results(results, blocked_domains or [])
             _agentic_log(f"search done results={len(results)}")
             trace["web_search"] = [asdict(result) for result in results]

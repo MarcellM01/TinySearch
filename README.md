@@ -1,7 +1,10 @@
 # TinySearch
 
-> [!WARNING]
-> TinySearch is temporarily affected by DuckDuckGo limiting automated searches from some environments. We are switching the search layer to SearxNG. Please give us a few days and we will be back with a more reliable setup.
+> [!NOTE]
+> TinySearch now defaults to a SearXNG-compatible search backend, with the
+> existing DuckDuckGo HTML scraper kept as a configurable fallback. The bundled
+> `compose.yaml` ships a local SearXNG service so the stack works out of the
+> box. See [Search backends](#search-backends) for configuration.
 
 <p align="center">
   <img src="assets/tinysearch_logo.png" alt="TinySearch" width="240" />
@@ -75,7 +78,7 @@ search backend.
 flowchart TB
     subgraph Row1["Search and choose pages"]
         direction LR
-        A[User query] --> B[DuckDuckGo HTML search]
+        A[User query] --> B[Web search<br/>SearXNG default, DuckDuckGo fallback]
         B --> C[Filter HTTP results<br/>build title URL domain snippet docs]
         C --> D[Rank search docs<br/>dense + BM25 weighted RRF]
     end
@@ -291,6 +294,7 @@ You can also set `embedding_model` to a custom Hugging Face ONNX repo id. Set
 Key settings:
 
 - Search: `search_top_k`, `search_rrf_cutoff`, `search_dense_weight`, `search_max_results_to_keep`, `blocked_domains`
+- Search backend: `search_backend`, `search_backend_url`, `search_engines`, `search_region`, `search_backend_fallback`
 - Chunks: `chunk_rrf_cutoff`, `chunk_dense_weight`, `chunk_max_results_to_keep`
 - Crawl: `crawl_max_chunk_tokens`, `crawl_overlap_tokens`, `max_concurrent_crawls`
 - Embeddings: `embedding_backend`, `embedding_model`, `embedding_openai_env_file`, `max_concurrent_embedding_calls`
@@ -312,6 +316,88 @@ OPENAI_EMBEDDING_MODEL=
 
 The research pipeline requires dense embeddings. It raises if
 `search_dense_weight` or `chunk_dense_weight` is set to `0`.
+
+## Search backends
+
+TinySearch supports two web-search backends and selects between them from
+config. The defaults aim at the bundled compose setup: SearXNG runs as a
+sidecar, with the DuckDuckGo HTML scraper kept as an automatic fallback.
+
+Available values for `search_backend`:
+
+- `"searxng"` (default): query a SearXNG-compatible JSON endpoint. If the call
+  fails and `search_backend_fallback` is `true`, TinySearch falls back to
+  DuckDuckGo. With `search_backend_fallback: false` the SearXNG error surfaces.
+- `"duckduckgo"`: skip SearXNG entirely and use the existing DuckDuckGo HTML
+  scraper. This is the escape hatch that preserves pre-0.2 behavior.
+- `"auto"`: try SearXNG, then DuckDuckGo on any backend failure (fallback
+  is implied regardless of `search_backend_fallback`).
+
+A backend "failure" means a real backend error: network/timeout, non-200 HTTP
+response, a non-JSON SearXNG body, or a DuckDuckGo CAPTCHA / 403. A legitimate
+empty result set is **not** a failure and does not trigger fallback.
+
+Minimal config example:
+
+```json
+{
+  "search_backend": "searxng",
+  "search_backend_url": "http://searxng:8080/search",
+  "search_engines": ["google", "bing"],
+  "search_region": "us-en",
+  "search_backend_fallback": true
+}
+```
+
+### SearXNG JSON output is required
+
+SearXNG ships with the JSON output format **disabled** by default. The bundled
+`searxng/settings.yml` enables it via:
+
+```yaml
+search:
+  formats:
+    - html
+    - json
+```
+
+If TinySearch reports `SearchBackendUnavailable: SearXNG did not return JSON`,
+your SearXNG instance is returning HTML — add `json` to `search.formats` and
+restart it.
+
+### Environment overrides
+
+- `SEARXNG_URL`: overrides `search_backend_url` for the running process. Useful
+  in Docker so the same image can point at different SearXNG endpoints without
+  rebuilding `research_config.json`.
+
+### Compose setup
+
+The bundled `compose.yaml` starts a `searxng` service alongside `mcp` (and
+optionally `fastapi`). The `mcp` and `fastapi` services reach SearXNG at
+`http://searxng:8080/search` over the internal compose network, and have
+`SEARXNG_URL` set automatically.
+
+```bash
+docker compose up
+```
+
+A minimal `searxng/settings.yml` is committed at the repo root. Override
+`server.secret_key` before exposing the SearXNG instance beyond localhost.
+
+### Single-container / from-source
+
+When you run TinySearch standalone (e.g. `docker run marcellm01/tinysearch:latest`
+or `python servers/mcp_server.py`), there is no local SearXNG. With the default
+config (`search_backend: "searxng"`, `search_backend_fallback: true`) the
+SearXNG call fails fast on the short connect timeout and TinySearch
+transparently falls back to DuckDuckGo.
+
+To keep the pre-0.2 behavior with no SearXNG involvement, set:
+
+```json
+{ "search_backend": "duckduckgo" }
+```
 
 ## When not to use TinySearch
 

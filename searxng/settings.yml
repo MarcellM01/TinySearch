@@ -1,0 +1,15 @@
+use_default_settings: true
+
+# SearXNG ships with JSON output disabled by default. TinySearch's SearXNG
+# backend calls the endpoint with format=json, so we must enable it here.
+search:
+  formats:
+    - html
+    - json
+
+server:
+  # Override this in production. The default value below only exists so the
+  # bundled compose setup boots without requiring extra steps for local dev.
+  secret_key: "tinysearch-local-dev-only-change-me"
+  limiter: false
+  image_proxy: false
