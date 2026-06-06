@@ -1,4 +1,8 @@
 {
+  "$schema": "https://glama.ai/mcp/schemas/server.json",
+  "maintainers": [
+    "MarcellM01"
+  ],
   "baseImage": "debian:trixie-slim",
   "nodeVersion": "26",
   "pythonVersion": "3.12",
