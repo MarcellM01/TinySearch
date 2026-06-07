@@ -14,6 +14,7 @@
 [![Release](https://img.shields.io/github/v/release/MarcellM01/TinySearch?label=release)](https://github.com/MarcellM01/TinySearch/releases)
 [![Last Commit](https://img.shields.io/github/last-commit/MarcellM01/TinySearch)](https://github.com/MarcellM01/TinySearch/commits/main)
 [![Docker Pulls](https://img.shields.io/docker/pulls/marcellm01/tinysearch?label=docker%20pulls)](https://hub.docker.com/r/marcellm01/tinysearch)
+[![Discord](https://img.shields.io/badge/Discord-Join%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/NG6u2zamR)
 ![MCP Server](https://img.shields.io/badge/MCP-server-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-supported-009688)
 
@@ -59,6 +60,12 @@ research(query)
 
 Pass the user's question as-is. TinySearch searches, crawls, reranks, and
 returns the grounded prompt in `answer`.
+
+## Community
+
+The TinySearch Discord is now live ✨
+
+Join the [TinySearch Discord](https://discord.gg/NG6u2zamR) for support, release updates, bug reports, and contributor discussion.
 
 ## Why TinySearch?
 
