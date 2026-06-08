@@ -2,13 +2,14 @@
 set -eu
 
 # Glama builds TinySearch into a single container. This script is used when the
-# container also includes a local SearXNG install, so Glama can run TinySearch
-# as one MCP server image while TinySearch still uses a SearXNG-compatible
-# backend internally.
+# container also includes a local SearXNG source checkout, so Glama can run
+# TinySearch as one MCP server image while TinySearch still uses a
+# SearXNG-compatible backend internally.
 
 : "${SEARXNG_URL:=http://127.0.0.1:8080/search}"
 : "${TINYSEARCH_MODELS_DIR:=/data/models}"
 : "${SEARXNG_SETTINGS_PATH:=/etc/searxng/settings.yml}"
+: "${SEARXNG_SRC_DIR:=/opt/searxng}"
 : "${MCP_TRANSPORT:=stdio}"
 : "${MCP_HOST:=0.0.0.0}"
 : "${SEARXNG_STARTUP_WAIT_SECONDS:=5}"
@@ -19,10 +20,18 @@ export SEARXNG_SETTINGS_PATH
 export MCP_TRANSPORT
 export MCP_HOST
 
+# Run SearXNG directly from the source checkout instead of installing it as a
+# wheel/package. This avoids SearXNG's isolated Python build step, which can
+# fail inside generated container builders even after requirements are installed.
+export PYTHONPATH="${SEARXNG_SRC_DIR}${PYTHONPATH:+:$PYTHONPATH}"
+
 mkdir -p "$TINYSEARCH_MODELS_DIR"
 
 echo "Starting bundled SearXNG on 127.0.0.1:8080..."
-/opt/searxng-venv/bin/python -m searx.webapp &
+(
+  cd "$SEARXNG_SRC_DIR"
+  /opt/searxng-venv/bin/python -m searx.webapp
+) &
 SEARXNG_PID="$!"
 
 cleanup() {
