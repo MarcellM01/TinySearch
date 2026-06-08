@@ -1,10 +1,9 @@
 #!/usr/bin/env sh
 set -eu
 
-# Glama builds TinySearch into a single container. This script is used when the
-# container also includes a local SearXNG source checkout, so Glama can run
-# TinySearch as one MCP server image while TinySearch still uses a
-# SearXNG-compatible backend internally.
+# Glama wraps the configured command with mcp-proxy. This script only prepares
+# the bundled local SearXNG process, then execs the raw TinySearch stdio MCP
+# server. Do not run mcp-proxy inside this script.
 
 : "${SEARXNG_URL:=http://127.0.0.1:8080/search}"
 : "${TINYSEARCH_MODELS_DIR:=/data/models}"
@@ -27,11 +26,11 @@ export PYTHONPATH="${SEARXNG_SRC_DIR}${PYTHONPATH:+:$PYTHONPATH}"
 
 mkdir -p "$TINYSEARCH_MODELS_DIR"
 
-echo "Starting bundled SearXNG on 127.0.0.1:8080..."
+echo "Starting bundled SearXNG on 127.0.0.1:8080..." >&2
 (
   cd "$SEARXNG_SRC_DIR"
   /opt/searxng-venv/bin/python -m searx.webapp
-) &
+) >&2 2>&2 &
 SEARXNG_PID="$!"
 
 cleanup() {
@@ -41,8 +40,8 @@ cleanup() {
 }
 trap cleanup INT TERM EXIT
 
-echo "Waiting ${SEARXNG_STARTUP_WAIT_SECONDS}s for SearXNG to initialize..."
+echo "Waiting ${SEARXNG_STARTUP_WAIT_SECONDS}s for SearXNG to initialize..." >&2
 sleep "$SEARXNG_STARTUP_WAIT_SECONDS"
 
-echo "Starting TinySearch MCP server through mcp-proxy..."
-exec mcp-proxy -- /opt/tinysearch-venv/bin/python servers/mcp_server.py
+echo "Starting TinySearch stdio MCP server..." >&2
+exec /opt/tinysearch-venv/bin/python servers/mcp_server.py
