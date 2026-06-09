@@ -1,0 +1,41 @@
+name: tinysearch
+
+services:
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    configs:
+      - source: searxng_settings
+        target: /etc/searxng/settings.yml
+
+  tinysearch:
+    image: marcellm01/tinysearch:latest
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    shm_size: "1gb"
+    volumes:
+      - models:/data/models
+    environment:
+      MCP_TRANSPORT: streamable-http
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 8000
+      SEARXNG_URL: http://searxng:8080/search
+    depends_on:
+      - searxng
+
+configs:
+  searxng_settings:
+    content: |
+      use_default_settings: true
+      search:
+        formats:
+          - html
+          - json
+      server:
+        secret_key: "tinysearch-local-only"
+        limiter: false
+        image_proxy: false
+
+volumes:
+  models:

@@ -34,10 +34,12 @@ Just search -> crawl -> rerank -> grounded prompt.
 
 ## Quick start
 
-Run TinySearch as an MCP server over Streamable HTTP:
+Run TinySearch with its own SearXNG instance as an MCP server over Streamable
+HTTP. Docker Compose loads the configuration directly from GitHub, so you do
+not need to clone the repository or create any configuration files:
 
 ```bash
-docker run --rm -p 8000:8000 -e MCP_TRANSPORT=streamable-http -e MCP_HOST=0.0.0.0 marcellm01/tinysearch:latest
+docker compose -f "https://github.com/MarcellM01/TinySearch.git#main:compose.quickstart.yaml" up -d
 ```
 
 Then connect your MCP client to:
@@ -50,6 +52,12 @@ Then connect your MCP client to:
     }
   }
 }
+```
+
+Stop and remove the containers later with:
+
+```bash
+docker compose -f "https://github.com/MarcellM01/TinySearch.git#main:compose.quickstart.yaml" down
 ```
 
 TinySearch exposes one MCP tool:
