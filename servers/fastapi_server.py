@@ -11,7 +11,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, HttpUrl
 
 from pipelines.agentic_research import agentic_run
@@ -23,7 +23,14 @@ from services.research_config_service import (
     research_run_kwargs,
     research_tokenizer_name,
 )
+from services.scrape_service import (
+    DEFAULT_SCRAPE_MAX_TOKENS,
+    SCRAPE_ERROR_MAP,
+    ScrapeError,
+    scrape_url,
+)
 from services.site_crawl_service import crawl_search
+from services.url_safety_service import BlockedUrlError, InvalidUrlError
 from services.web_search_service import (
     filter_blocked_search_results,
     search,
@@ -74,6 +81,13 @@ class SiteCrawlRequest(BaseModel):
     crawl4ai_bm25_threshold: float = Field(default=1.5, ge=0)
     crawl4ai_language: str = "english"
     encoding_name: str | None = None
+
+
+class ScrapeRequest(BaseModel):
+    url: HttpUrl
+    query: str = Field(..., min_length=1)
+    max_tokens: int = Field(default=DEFAULT_SCRAPE_MAX_TOKENS, ge=1, le=200_000)
+    include_metadata: bool = True
 
 
 class ResearchRequest(BaseModel):
@@ -174,6 +188,56 @@ async def site_crawl_get(
             url=url,
             query=query,
             top_k=top_k,
+        )
+    )
+
+
+def _raise_scrape_http_error(exc: Exception) -> None:
+    mapping = SCRAPE_ERROR_MAP.get(type(exc))
+    if mapping is None:
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "internal_error", "message": "internal error"},
+        ) from exc
+    code, status_code = mapping
+    raise HTTPException(
+        status_code=status_code,
+        detail={"code": code, "message": str(exc)},
+    ) from exc
+
+
+@app.post("/scrape")
+async def scrape_endpoint(request: ScrapeRequest) -> dict[str, Any]:
+    config = load_research_config()
+    await _ensure_local_bundle_for_config(config)
+    tokenizer = research_tokenizer_name(config)
+    try:
+        result = await scrape_url(
+            str(request.url),
+            request.query,
+            max_tokens=request.max_tokens,
+            include_metadata=request.include_metadata,
+            config=config,
+            tokenizer_name=tokenizer,
+        )
+    except (InvalidUrlError, BlockedUrlError, ScrapeError) as exc:
+        _raise_scrape_http_error(exc)
+    return result.to_response(include_metadata=request.include_metadata)
+
+
+@app.get("/scrape")
+async def scrape_get(
+    url: HttpUrl,
+    query: str,
+    max_tokens: int = DEFAULT_SCRAPE_MAX_TOKENS,
+    include_metadata: bool = True,
+) -> dict[str, Any]:
+    return await scrape_endpoint(
+        ScrapeRequest(
+            url=url,
+            query=query,
+            max_tokens=max_tokens,
+            include_metadata=include_metadata,
         )
     )
 
