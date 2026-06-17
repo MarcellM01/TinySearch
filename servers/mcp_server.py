@@ -39,6 +39,38 @@ def _mcp_port() -> int:
         raise ValueError("MCP_PORT must be an integer") from exc
 
 
+def _mcp_cors_origins() -> list[str]:
+    """Origins allowed for browser MCP clients (e.g. llama.cpp web UI). Default: all."""
+    raw = os.environ.get("MCP_CORS_ORIGINS", "*").strip()
+    if not raw or raw == "*":
+        return ["*"]
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+
+def _streamable_http_cors_middleware() -> list[Any]:
+    from mcp.server.streamable_http import (
+        MCP_PROTOCOL_VERSION_HEADER,
+        MCP_SESSION_ID_HEADER,
+    )
+    from starlette.middleware import Middleware
+    from starlette.middleware.cors import CORSMiddleware
+
+    return [
+        Middleware(
+            CORSMiddleware,
+            allow_origins=_mcp_cors_origins(),
+            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+            allow_headers=[
+                "accept",
+                "content-type",
+                MCP_SESSION_ID_HEADER,
+                MCP_PROTOCOL_VERSION_HEADER,
+            ],
+            expose_headers=[MCP_SESSION_ID_HEADER, MCP_PROTOCOL_VERSION_HEADER],
+        )
+    ]
+
+
 class _StreamablePathLegacySseBridge:
     """Starlette ``Route`` wraps async *functions* as request handlers; raw ASGI must be a non-function callable."""
 
@@ -112,7 +144,7 @@ async def _run_streamable_http_combined_async() -> None:
     app = Starlette(
         debug=mcp.settings.debug,
         routes=bridged_stream_routes + extra_sse,
-        middleware=stream_app.user_middleware,
+        middleware=_streamable_http_cors_middleware() + stream_app.user_middleware,
         lifespan=stream_app.router.lifespan_context,
     )
     config = uvicorn.Config(

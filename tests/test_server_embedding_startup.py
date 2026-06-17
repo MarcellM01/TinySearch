@@ -11,6 +11,7 @@ from servers.fastapi_server import (
     research_endpoint,
 )
 from servers.mcp_server import _ensure_local_bundle_for_config as ensure_mcp_bundle
+from servers.mcp_server import _mcp_cors_origins
 from services.research_config_service import (
     DEFAULT_RESEARCH_CONFIG,
     config_trace_path,
@@ -115,6 +116,22 @@ class McpEmbeddingStartupTests(unittest.TestCase):
             ensure_mcp_bundle(cfg)
 
         ensure.assert_not_called()
+
+
+class McpCorsConfigTests(unittest.TestCase):
+    def test_cors_origins_default_to_wildcard(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertEqual(_mcp_cors_origins(), ["*"])
+
+    def test_cors_origins_parse_comma_separated_list(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {"MCP_CORS_ORIGINS": "http://localhost:8080, http://172.20.210.53:8080"},
+        ):
+            self.assertEqual(
+                _mcp_cors_origins(),
+                ["http://localhost:8080", "http://172.20.210.53:8080"],
+            )
 
 
 if __name__ == "__main__":
