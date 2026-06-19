@@ -64,13 +64,14 @@ TinySearch exposes two MCP tools:
 
 ```text
 research(query)
-scrape_url(url, query, max_tokens=4000)
+scrape_url(url, query)
 ```
 
-Pass the user's question as-is. `research` searches, crawls, reranks, and
-returns the grounded prompt in `answer`. `scrape_url` inspects a specific URL
-the caller already knows, applies the same ranking and token budget, and
-returns the grounded prompt in `answer`.
+Pass the user's question as-is. Use `research` first when you need to discover
+relevant URLs; it searches, crawls, reranks, and returns the grounded prompt in
+`answer`. Use `scrape_url` after the user provides a URL or `research` already
+identified the page to inspect; it applies the same ranking with the server's
+default token budget and returns the grounded prompt in `answer`.
 
 ## Community
 

@@ -5,9 +5,10 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from mcp.server.fastmcp import FastMCP
+from pydantic import Field
 from starlette.datastructures import Headers
 from starlette.routing import BaseRoute, Mount, Route
 
@@ -167,22 +168,23 @@ MCP_INSTRUCTIONS = """
 This MCP server exposes two high-level web tools:
 
 1. research(query)
-2. scrape_url(url, query, max_tokens=4000)
+2. scrape_url(url, query)
 
 Pass the user's question as-is in query. Do not rewrite, correct spelling,
 expand abbreviations, add dates, add missing context, simplify, translate, or
 otherwise improve the user's wording before calling either tool.
 
-research runs a web search through the configured backend (SearXNG by default,
-with a DuckDuckGo fallback), ranks search results with dense embeddings and
-BM25 using reciprocal rank fusion, crawls kept pages, ranks page chunks, and
-returns a grounded prompt in the answer field.
+Use research first when you need to discover relevant URLs. It searches the web
+through the configured backend (SearXNG by default, with a DuckDuckGo fallback),
+ranks search results with dense embeddings and BM25 using reciprocal rank
+fusion, crawls kept pages, ranks page chunks, and returns a grounded prompt in
+the answer field.
 
-scrape_url inspects a specific URL the caller already knows. Use it when the
-user provides a URL or when a previous search result already identified the
-page to inspect. It crawls the page, extracts clean markdown, ranks chunks
-against the query and returns a grounded answer prompt within a token budget.
-The caller's LLM should answer from that prompt and cite the source URL.
+Use scrape_url after a URL is already known: either the user provided it, or a
+previous research result identified the page to inspect. It crawls the page,
+extracts clean markdown, ranks chunks against the query, and returns a grounded
+answer prompt. The caller's LLM should answer from that prompt and cite the
+source URL.
 """.strip()
 
 
@@ -232,11 +234,23 @@ mcp = FastMCP(
     name="research",
     title="Research",
     description=(
-        "Search the web, crawl ranked pages, and return a grounded answer prompt. "
-        "Input schema has exactly one field: query. Pass the user's question as-is."
+        "Discover relevant URLs for the user's question, crawl ranked pages, "
+        "and return a search-grounded answer prompt. Use this first when you "
+        "need to find sources. Input schema has exactly one field: query. "
+        "Pass the user's question as-is."
     ),
 )
-async def research(query: str) -> dict[str, Any]:
+async def research(
+    query: Annotated[
+        str,
+        Field(
+            description=(
+                "The user's question, passed exactly as written. Use this for "
+                "open-ended discovery when you need to find relevant URLs."
+            )
+        ),
+    ],
+) -> dict[str, Any]:
     query = normalize_research_query(query)
     started = time.monotonic()
     _log(f"research called query={query!r}")
@@ -264,17 +278,33 @@ async def research(query: str) -> dict[str, Any]:
     title="Scrape URL",
     description=(
         "Inspect a specific URL and return a grounded answer prompt containing "
-        "the page content most relevant to the requested query. Use this when "
-        "the user provides a URL or when a previous search result already "
-        "identified the page to inspect. Pass the user's query without rewriting it."
+        "the page content most relevant to the requested query. Use this after "
+        "the user provides a URL or research already identified the page to "
+        "inspect. Pass the user's query without rewriting it."
     ),
 )
 async def scrape_url_tool(
-    url: str,
-    query: str,
-    max_tokens: int = DEFAULT_SCRAPE_MAX_TOKENS,
+    url: Annotated[
+        str,
+        Field(
+            description=(
+                "The exact http(s) URL to inspect, supplied by the user or found "
+                "in a previous research result."
+            )
+        ),
+    ],
+    query: Annotated[
+        str,
+        Field(
+            description=(
+                "The user's question, passed exactly as written. The page is "
+                "ranked against this query."
+            )
+        ),
+    ],
 ) -> dict[str, Any]:
     started = time.monotonic()
+    max_tokens = DEFAULT_SCRAPE_MAX_TOKENS
     _log(f"scrape_url called url={url!r} query={query!r} max_tokens={max_tokens}")
     cfg = load_research_config()
     _ensure_local_bundle_for_config(cfg)

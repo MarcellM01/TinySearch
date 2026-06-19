@@ -58,7 +58,7 @@ class ScrapeFastApiMcpParityTests(unittest.IsolatedAsyncioTestCase):
             fastapi_payload["retrieved_at"], mcp_payload["retrieved_at"]
         )
 
-    async def test_both_adapters_pass_identical_args_to_service(self) -> None:
+    async def test_both_adapters_pass_default_mcp_args_to_service(self) -> None:
         fastapi_mock = AsyncMock(return_value=_shared_result())
         mcp_mock = AsyncMock(return_value=_shared_result())
 
@@ -67,15 +67,13 @@ class ScrapeFastApiMcpParityTests(unittest.IsolatedAsyncioTestCase):
             new_callable=AsyncMock,
         ):
             await scrape_endpoint(
-                ScrapeRequest(
-                    url="https://example.com/x", query="q", max_tokens=1234
-                )
+                ScrapeRequest(url="https://example.com/x", query="q")
             )
 
         with patch("servers.mcp_server.scrape_url", mcp_mock), patch(
             "servers.mcp_server._ensure_local_bundle_for_config"
         ):
-            await _fn(scrape_url_tool)("https://example.com/x", "q", max_tokens=1234)
+            await _fn(scrape_url_tool)("https://example.com/x", "q")
 
         fastapi_kwargs = fastapi_mock.await_args.kwargs
         mcp_kwargs = mcp_mock.await_args.kwargs

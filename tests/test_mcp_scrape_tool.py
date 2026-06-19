@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from inspect import signature
 from unittest.mock import AsyncMock, patch
 
 from servers.mcp_server import scrape_url_tool
@@ -34,6 +35,12 @@ def _fn(coro):
 
 
 class ScrapeUrlToolTests(unittest.IsolatedAsyncioTestCase):
+    def test_mcp_signature_exposes_only_url_and_query(self) -> None:
+        self.assertEqual(
+            list(signature(_fn(scrape_url_tool)).parameters),
+            ["url", "query"],
+        )
+
     async def test_returns_answer_and_diagnostics(self) -> None:
         scrape_mock = AsyncMock(return_value=_result())
         with patch("servers.mcp_server.scrape_url", scrape_mock), patch(
