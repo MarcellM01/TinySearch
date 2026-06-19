@@ -313,6 +313,58 @@ async def crawl(
     }
 
 
+async def fetch_html_for_query(
+    url: str,
+    user_query: str,
+    *,
+    bm25_threshold: float = 1.5,
+    bm25_language: str = "english",
+) -> dict[str, Any]:
+    """Fetch a URL through Crawl4AI applying a BM25 content filter on the body.
+
+    Returns ``final_url``, ``html``, ``markdown_raw``, ``markdown_fit`` and the
+    crawler's ``metadata`` dict. The ``final_url`` reflects the URL after any
+    redirects Crawl4AI followed.
+    """
+    _ensure_utf8_stdio()
+
+    AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, BM25ContentFilter, _, DefaultMarkdownGenerator = (
+        _crawl4ai_stack()
+    )
+
+    bm25_filter = BM25ContentFilter(
+        user_query=user_query,
+        bm25_threshold=bm25_threshold,
+        language=bm25_language,
+    )
+    config = CrawlerRunConfig(
+        verbose=False,
+        markdown_generator=DefaultMarkdownGenerator(
+            content_filter=bm25_filter,
+            options=dict(_DEFAULT_MARKDOWN_GENERATOR_OPTIONS),
+        ),
+    )
+
+    async with AsyncWebCrawler(config=BrowserConfig(verbose=False)) as crawler:
+        result = await crawler.arun(url=url, config=config)
+
+    final_url = (
+        getattr(result, "redirected_url", None)
+        or getattr(result, "url", None)
+        or url
+    )
+    metadata_obj = getattr(result, "metadata", None)
+    metadata = dict(metadata_obj) if isinstance(metadata_obj, dict) else {}
+
+    return {
+        "final_url": str(final_url),
+        "html": _get_html(result),
+        "markdown_raw": _get_markdown_raw(result),
+        "markdown_fit": _get_markdown_fit(result) or "",
+        "metadata": metadata,
+    }
+
+
 async def crawl_search(
     url: str,
     user_query: str,
@@ -365,29 +417,15 @@ async def crawl_search(
             "document_type": document_type,
         }
 
-    AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, BM25ContentFilter, _, DefaultMarkdownGenerator = (
-        _crawl4ai_stack()
-    )
-
-    bm25_filter = BM25ContentFilter(
+    page = await fetch_html_for_query(
+        url=url,
         user_query=user_query,
         bm25_threshold=crawl4ai_bm25_threshold,
-        language=crawl4ai_language,
+        bm25_language=crawl4ai_language,
     )
-    config = CrawlerRunConfig(
-        verbose=False,
-        markdown_generator=DefaultMarkdownGenerator(
-            content_filter=bm25_filter,
-            options=dict(_DEFAULT_MARKDOWN_GENERATOR_OPTIONS),
-        )
-    )
-
-    async with AsyncWebCrawler(config=BrowserConfig(verbose=False)) as crawler:
-        result = await crawler.arun(url=url, config=config)
-
-    html = _get_html(result)
-    markdown_raw = _get_markdown_raw(result)
-    markdown_fit = _get_markdown_fit(result) or ""
+    html = page["html"]
+    markdown_raw = page["markdown_raw"]
+    markdown_fit = page["markdown_fit"]
     markdown_for_chunking = markdown_fit or markdown_raw
 
     chunks = chunk_text(

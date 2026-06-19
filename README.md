@@ -60,13 +60,16 @@ Stop and remove the containers later with:
 docker compose -f "https://github.com/MarcellM01/TinySearch.git#main:compose.quickstart.yaml" down
 ```
 
-TinySearch exposes one MCP tool:
+TinySearch exposes two MCP tools:
 
 ```text
 research(query)
+scrape_url(url, query, max_tokens=4000)
 ```
 
-Pass the user's question as-is. TinySearch searches, crawls, reranks, and
+Pass the user's question as-is. `research` searches, crawls, reranks, and
+returns the grounded prompt in `answer`. `scrape_url` inspects a specific URL
+the caller already knows, applies the same ranking and token budget, and
 returns the grounded prompt in `answer`.
 
 ## Community
@@ -279,7 +282,37 @@ Endpoints:
 - `GET /health`
 - `GET /web_search?query=...`
 - `POST /site_crawl`
+- `POST /scrape`
 - `POST /research`
+
+`POST /scrape` accepts a JSON body with `url` (required), `query` (required,
+non-empty), `max_tokens` (optional, default 4000) and `include_metadata`
+(optional, default true). The response includes a `URL-GROUNDED ANSWER PROMPT`
+in `answer`, plus `content_tokens`, `answer_tokens`, `truncated`, `url`,
+`title`, `retrieved_at` (aware UTC) and best-effort `metadata`
+(`description`, `author`, `published_date`).
+
+Errors return `{"detail": {"code", "message"}}` with stable codes:
+`invalid_url` (400), `blocked_url` (403), `unsupported_document` (415),
+`empty_content` (422), `fetch_failed` (502), `fetch_timeout` (504).
+
+### URL safety
+
+`/scrape` and `scrape_url` accept arbitrary user-supplied URLs and enforce
+the following checks before fetching:
+
+- only `http` and `https` schemes
+- URLs with embedded credentials are rejected
+- IP literals and resolved addresses that are loopback, private, link-local,
+  multicast, reserved or unspecified are rejected (DNS rebinding is mitigated
+  by rejecting if **any** resolved address is non-public, not just one)
+- the configured `blocked_domains` list is applied to both the initial URL
+  and the final URL reported by the crawler after redirects
+
+Crawl4AI does not expose intermediate redirect hops, so the safety check runs
+on the initial URL and the final URL. If you need stricter handling for
+redirect chains, run TinySearch behind an egress proxy that enforces your
+policy.
 
 ## Configuration
 

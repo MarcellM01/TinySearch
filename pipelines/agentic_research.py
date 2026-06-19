@@ -36,6 +36,7 @@ from services.embedding_service import (
     resolve_embedding_tokenizer_name,
 )
 from services.chunk_pool_selection_service import select_chunks_with_quota_and_fill
+from services.grounded_prompt_service import format_search_grounded_prompt
 from services.hybrid_embed_search_service import EmbeddingFn, rank_chunks_hybrid
 from services.research_config_service import (
     config_trace_path,
@@ -59,8 +60,6 @@ CrawlFn = Callable[..., Awaitable[dict[str, Any]]]
 _HTTP_URL = re.compile(r"^https?://", re.IGNORECASE)
 DEFAULT_DENSE_QUERY_PREFIX = "task: search result | query: "
 DEFAULT_DENSE_DOCUMENT_PREFIX = "title: none | text: "
-PROMPT_RULE = "=" * 88
-FIELD_RULE = "======"
 
 
 @dataclass(frozen=True)
@@ -128,119 +127,6 @@ def _search_chunk(result: SearchResult) -> dict[str, Any]:
         "snippet": result.text,
         "text": _search_result_doc(result),
     }
-
-
-def _format_relevant_text(chunks: Sequence[dict[str, Any]]) -> str:
-    blocks: list[str] = []
-    for ordinal, chunk in enumerate(chunks, start=1):
-        text = str(chunk.get("text") or "").strip()
-        if not text:
-            continue
-        blocks.extend(
-            [
-                f"----- RELEVANT CHUNK {ordinal} -----",
-                text,
-            ]
-        )
-    return "\n".join(blocks).strip()
-
-
-def _format_results_prompt(
-    *,
-    question: str,
-    results: Sequence[dict[str, Any]],
-    today: str | None = None,
-) -> str:
-    clean_question = question.strip()
-    today_text = today or datetime.now(UTC).date().isoformat()
-    lines = [
-        PROMPT_RULE,
-        "SEARCH-GROUNDED ANSWER PROMPT",
-        PROMPT_RULE,
-        "",
-        "QUESTION",
-        PROMPT_RULE,
-        clean_question,
-        PROMPT_RULE,
-        "",
-        "TODAY",
-        PROMPT_RULE,
-        today_text,
-        PROMPT_RULE,
-        "",
-        "CRITICAL INSTRUCTIONS",
-        PROMPT_RULE,
-        "You are answering the QUESTION using only the text under RESULTS.",
-        "First resolve any relative date in the QUESTION using TODAY.",
-        f"TODAY is {today_text!r}.",
-        f"For example, 'last year' means calendar year {int(today_text.split('-')[0]) - 1}.",
-        "Use only facts directly supported by RESULTS.",
-        "Do not use your own knowledge.",
-        "Do not add extra historical claims unless directly supported by RESULTS.",
-        "Do not infer 'first ever', 'most recent', 'record', or franchise history unless RESULTS explicitly support it.",
-        "If RESULTS contain conflicting information, prefer the result that directly matches the resolved date and question.",
-        "If the conflict cannot be resolved, say the results conflict.",
-        "Cite the source URL after each factual claim.",
-        "If the answer is not directly supported by RESULTS, say the results are not enough.",
-        PROMPT_RULE,
-        "",
-        PROMPT_RULE,
-        "RESULTS",
-        PROMPT_RULE,
-        "",
-    ]
-
-    for ordinal, result in enumerate(results, start=1):
-        relevant_text = _format_relevant_text(result.get("ranked_chunks") or [])
-        lines.extend(
-            [
-                PROMPT_RULE,
-                f"RESULT {ordinal}",
-                PROMPT_RULE,
-                f"TITLE {ordinal}",
-                FIELD_RULE,
-                str(result["title"]).strip(),
-                FIELD_RULE,
-                f"URL {ordinal}",
-                FIELD_RULE,
-                str(result["url"]).strip(),
-                FIELD_RULE,
-                f"SEARCH PREVIEW {ordinal}",
-                FIELD_RULE,
-                str(result.get("snippet") or "").strip(),
-                FIELD_RULE,
-            ]
-        )
-        if relevant_text:
-            lines.extend(
-                [
-                    f"RELEVANT TEXT {ordinal}",
-                    FIELD_RULE,
-                    relevant_text,
-                    FIELD_RULE,
-                ]
-            )
-        lines.append("")
-
-    lines.extend(
-        [
-            PROMPT_RULE,
-            "QUESTION",
-            PROMPT_RULE,
-            clean_question,
-            PROMPT_RULE,
-            "",
-            "TODAY",
-            PROMPT_RULE,
-            today_text,
-            PROMPT_RULE,
-            "",
-            PROMPT_RULE,
-            "SEARCH-GROUNDED ANSWER PROMPT",
-            PROMPT_RULE,
-        ]
-    )
-    return "\n".join(lines).strip()
 
 
 async def _rank(
@@ -427,7 +313,7 @@ async def agentic_run(
             except SearchBackendError as exc:
                 _agentic_log(f"search backend error: {exc}")
                 await emit("search_backend_error", error=str(exc))
-                prompt = _format_results_prompt(question=query, results=[])
+                prompt = format_search_grounded_prompt(question=query, results=[])
                 return finish("search_backend_error", prompt, [])
             results = [result for result in raw_results if _is_http_url(result.url)]
             results = filter_blocked_search_results(results, blocked_domains or [])
@@ -436,7 +322,7 @@ async def agentic_run(
             await emit("search_results", results_count=len(results))
 
             if not results:
-                prompt = _format_results_prompt(question=query, results=[])
+                prompt = format_search_grounded_prompt(question=query, results=[])
                 return finish("no_search_results", prompt, [])
 
             tokenizer_name = (
@@ -593,13 +479,13 @@ async def agentic_run(
                 chunks_in_prompt=len(ranked_chunk_pool),
                 crawl_errors_count=len(crawl_errors),
             )
-            prompt = _format_results_prompt(question=query, results=crawled_results)
+            prompt = format_search_grounded_prompt(question=query, results=crawled_results)
             await emit("done", results_count=len(crawled_results), crawl_errors_count=len(crawl_errors))
             _agentic_log(f"done results={len(crawled_results)} crawl_errors={len(crawl_errors)}")
             return finish("ok", prompt, crawl_errors)
     except TimeoutError:
         _agentic_log(f"timeout query={query!r} limit_s={pipeline_timeout_seconds}")
-        prompt = _format_results_prompt(question=query, results=[])
+        prompt = format_search_grounded_prompt(question=query, results=[])
         return finish("timeout", prompt, [])
 
 

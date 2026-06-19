@@ -24,7 +24,14 @@ from services.research_config_service import (
     research_run_kwargs,
     research_tokenizer_name,
 )
+from services.scrape_service import (
+    DEFAULT_SCRAPE_MAX_TOKENS,
+    SCRAPE_ERROR_MAP,
+    ScrapeError,
+    scrape_url,
+)
 from services.token_counter_service import token_count
+from services.url_safety_service import BlockedUrlError, InvalidUrlError
 
 
 def _mcp_host() -> str:
@@ -157,19 +164,25 @@ async def _run_streamable_http_combined_async() -> None:
 
 
 MCP_INSTRUCTIONS = """
-This MCP server exposes one high-level web research tool:
+This MCP server exposes two high-level web tools:
 
 1. research(query)
+2. scrape_url(url, query, max_tokens=4000)
 
 Pass the user's question as-is in query. Do not rewrite, correct spelling,
 expand abbreviations, add dates, add missing context, simplify, translate, or
-otherwise improve the user's wording before calling the tool.
+otherwise improve the user's wording before calling either tool.
 
-The tool runs a web search through the configured backend (SearXNG by default,
+research runs a web search through the configured backend (SearXNG by default,
 with a DuckDuckGo fallback), ranks search results with dense embeddings and
 BM25 using reciprocal rank fusion, crawls kept pages, ranks page chunks, and
-returns a prompt in the answer field. The caller's LLM should answer from that
-prompt and cite source URLs from the result blocks.
+returns a grounded prompt in the answer field.
+
+scrape_url inspects a specific URL the caller already knows. Use it when the
+user provides a URL or when a previous search result already identified the
+page to inspect. It crawls the page, extracts clean markdown, ranks chunks
+against the query and returns a grounded answer prompt within a token budget.
+The caller's LLM should answer from that prompt and cite the source URL.
 """.strip()
 
 
@@ -244,6 +257,57 @@ async def research(query: str) -> dict[str, Any]:
         elapsed = time.monotonic() - started
         _log(f"research failed elapsed={elapsed:.2f}s error={exc!r}")
         raise
+
+
+@mcp.tool(
+    name="scrape_url",
+    title="Scrape URL",
+    description=(
+        "Inspect a specific URL and return a grounded answer prompt containing "
+        "the page content most relevant to the requested query. Use this when "
+        "the user provides a URL or when a previous search result already "
+        "identified the page to inspect. Pass the user's query without rewriting it."
+    ),
+)
+async def scrape_url_tool(
+    url: str,
+    query: str,
+    max_tokens: int = DEFAULT_SCRAPE_MAX_TOKENS,
+) -> dict[str, Any]:
+    started = time.monotonic()
+    _log(f"scrape_url called url={url!r} query={query!r} max_tokens={max_tokens}")
+    cfg = load_research_config()
+    _ensure_local_bundle_for_config(cfg)
+    tokenizer = research_tokenizer_name(cfg)
+    try:
+        result = await scrape_url(
+            url,
+            query,
+            max_tokens=max_tokens,
+            include_metadata=True,
+            config=cfg,
+            tokenizer_name=tokenizer,
+        )
+    except (InvalidUrlError, BlockedUrlError, ScrapeError) as exc:
+        elapsed = time.monotonic() - started
+        code = SCRAPE_ERROR_MAP.get(type(exc), ("internal_error", 500))[0]
+        _log(f"scrape_url failed elapsed={elapsed:.2f}s code={code} error={exc!r}")
+        raise ValueError(f"{code}: {exc}") from exc
+    elapsed = time.monotonic() - started
+    _log(
+        f"scrape_url returning content_tokens={result.content_tokens} "
+        f"answer_tokens={result.answer_tokens} truncated={result.truncated} "
+        f"elapsed={elapsed:.2f}s"
+    )
+    return {
+        "answer": result.answer,
+        "url": result.url,
+        "title": result.title,
+        "content_tokens": result.content_tokens,
+        "answer_tokens": result.answer_tokens,
+        "truncated": result.truncated,
+        "retrieved_at": result.retrieved_at,
+    }
 
 
 if __name__ == "__main__":
