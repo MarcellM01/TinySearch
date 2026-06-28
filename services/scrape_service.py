@@ -9,12 +9,12 @@ return a grounded answer prompt plus token accounting.
 from __future__ import annotations
 
 import asyncio
-import re
 import socket
 import urllib.error
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
+from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -91,24 +91,49 @@ class ScrapeResult:
         return payload
 
 
-_TITLE_RE = re.compile(r"<title[^>]*>([^<]+)</title>", re.IGNORECASE)
-_META_NAME_FIRST_RE = re.compile(
-    r'<meta\s+[^>]*?(?:name|property)\s*=\s*["\']([^"\']+)["\'][^>]*?content\s*=\s*["\']([^"\']*)["\'][^>]*>',
-    re.IGNORECASE,
-)
-_META_CONTENT_FIRST_RE = re.compile(
-    r'<meta\s+[^>]*?content\s*=\s*["\']([^"\']*)["\'][^>]*?(?:name|property)\s*=\s*["\']([^"\']+)["\'][^>]*>',
-    re.IGNORECASE,
-)
+class _HtmlMetaParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.meta: dict[str, str] = {}
+        self.title_parts: list[str] = []
+        self._in_title = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        lowered = tag.lower()
+        if lowered == "title":
+            self._in_title = True
+            return
+        if lowered != "meta":
+            return
+        attr_map = {key.lower(): (value or "") for key, value in attrs}
+        key = (attr_map.get("name") or attr_map.get("property") or "").strip().lower()
+        value = attr_map.get("content", "").strip()
+        if key and value:
+            self.meta.setdefault(key, value)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.lower() == "title":
+            self._in_title = False
+
+    def handle_data(self, data: str) -> None:
+        if self._in_title:
+            self.title_parts.append(data)
+
+
+def _parse_html_meta_and_title(html: str) -> tuple[dict[str, str], str]:
+    parser = _HtmlMetaParser()
+    try:
+        parser.feed(html or "")
+        parser.close()
+    except Exception:
+        return {}, ""
+    title = "".join(parser.title_parts).strip()
+    return parser.meta, title
 
 
 def _scan_html_meta(html: str) -> dict[str, str]:
-    found: dict[str, str] = {}
-    for key, value in _META_NAME_FIRST_RE.findall(html or ""):
-        found.setdefault(key.strip().lower(), value.strip())
-    for value, key in _META_CONTENT_FIRST_RE.findall(html or ""):
-        found.setdefault(key.strip().lower(), value.strip())
-    return found
+    meta, _ = _parse_html_meta_and_title(html)
+    return meta
 
 
 def _coerce_str(value: Any) -> str:
@@ -123,10 +148,8 @@ def _extract_title(crawl_metadata: dict[str, Any], html: str) -> str:
     title = _coerce_str(crawl_metadata.get("title"))
     if title:
         return title
-    match = _TITLE_RE.search(html or "")
-    if match:
-        return match.group(1).strip()
-    return ""
+    _, html_title = _parse_html_meta_and_title(html)
+    return html_title
 
 
 def _extract_metadata(

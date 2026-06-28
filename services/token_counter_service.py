@@ -101,7 +101,17 @@ def _resolve_huggingface_tokenizer(name: str):
     return HuggingFaceTokenizerAdapter(tokenizer)
 
 
+def _looks_like_tokenizer_path(name: str) -> bool:
+    if name.startswith(("/", "./", "../")):
+        return True
+    if "/" in name or "\\" in name:
+        return True
+    return name.lower().endswith(".json")
+
+
 def _resolve_tokenizers_json(name: str):
+    if not _looks_like_tokenizer_path(name):
+        return None
     try:
         from tokenizers import Tokenizer
     except Exception:
