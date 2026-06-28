@@ -1,11 +1,5 @@
 # TinySearch
 
-> [!NOTE]
-> TinySearch now defaults to a SearXNG-compatible search backend, with the
-> existing DuckDuckGo HTML scraper kept as a configurable fallback. The bundled
-> `compose.yaml` ships a local SearXNG service so the stack works out of the
-> box. See [Search backends](#search-backends) for configuration.
-
 <p align="center">
   <img src="assets/tinysearch_logo.png" alt="TinySearch" width="240" />
 </p>
@@ -18,11 +12,11 @@
 ![MCP Server](https://img.shields.io/badge/MCP-server-blue)
 ![FastAPI](https://img.shields.io/badge/FastAPI-supported-009688)
 
-A tiny local-first web research engine for MCP agents.
+**Self-hosted web research for MCP agents.**
 
-TinySearch searches the web, reranks results, crawls the best pages, extracts
-the most relevant chunks, and returns a source-grounded prompt your LLM can
-answer from.
+TinySearch gives local AI agents a web-research tool they can actually use:
+search the web, rerank results, crawl the best pages, extract the most relevant
+chunks, and return a source-grounded prompt your LLM can answer from.
 
 <p align="center">
   <img src="assets/demo_terminal_prompt.gif" alt="TinySearch terminal demo showing a source-grounded research prompt" width="780" />
@@ -31,6 +25,19 @@ answer from.
 No hosted dashboard. No account system. No analytics. No scraped-data cache.
 
 Just search -> crawl -> rerank -> grounded prompt.
+
+## Why people use it
+
+- Add web research to Cursor, Cline, Roo Code, Claude Desktop, or any MCP client.
+- Keep source URLs attached to the evidence your model sees.
+- Avoid dumping full webpages into context.
+- Run with local ONNX embeddings by default, or bring an OpenAI-compatible embedding API.
+- Use SearXNG by default, with a DuckDuckGo HTML fallback when configured.
+- Keep the stack small enough to run locally in Docker.
+
+TinySearch is built for local agents, prototypes, personal workflows, and small
+systems where source-grounded web research matters more than running a full
+search product.
 
 ## Quick start
 
@@ -68,31 +75,15 @@ research(query)
 scrape_url(url, query)
 ```
 
-Call `get_current_datetime()` first for time-sensitive questions or before
-adding year/month/day context to a research query. Pass the user's question
-as-is. Use `research` first when you need to discover relevant URLs; it searches,
-crawls, reranks, and returns the grounded prompt in `answer`. Use `scrape_url`
-after the user provides a URL or `research` already identified the page to
-inspect; it applies the same ranking with the server's default token budget and
-returns the grounded prompt in `answer`.
+Typical routing:
 
-## Community
+- Use `research(query)` when the agent needs to discover relevant URLs.
+- Use `scrape_url(url, query)` when the user already provided a URL, or when
+  `research` found the page to inspect.
+- Use `get_current_datetime()` before time-sensitive research.
 
-The TinySearch Discord is now live ✨
-
-Join the [TinySearch Discord](https://discord.gg/NG6u2zamR) for support, release updates, bug reports, and contributor discussion.
-
-## Why TinySearch?
-
-- Give local agents web research without wiring together a whole search stack.
-- Keep source URLs attached to the evidence your model sees.
-- Avoid dumping full webpages into context.
-- Use local ONNX embeddings or an OpenAI-compatible embedding API.
-- Run over MCP or a simple FastAPI endpoint.
-
-TinySearch is built for local agents, prototypes, personal workflows, and small
-systems where source-grounded web research matters more than running a full
-search backend.
+The tools return a grounded prompt in the `answer` field. Your MCP client model
+uses that prompt to write the final response with citations.
 
 ## How it works
 
@@ -376,6 +367,10 @@ TinySearch supports two web-search backends and selects between them from
 config. The defaults aim at the bundled compose setup: SearXNG runs as a
 sidecar, with the DuckDuckGo HTML scraper kept as an automatic fallback.
 
+Since `v0.2`, TinySearch defaults to a SearXNG-compatible backend. The bundled
+Compose files ship a local SearXNG service so the stack works out of the box,
+while the DuckDuckGo HTML scraper remains available as a configurable fallback.
+
 Available values for `search_backend`:
 
 - `"searxng"` (default): query a SearXNG-compatible JSON endpoint. If the call
@@ -465,12 +460,18 @@ crawler. It is probably not the right tool if you need:
 
 ## TinySearch vs...
 
-| Tool type | What it gives you | Tradeoff |
+| Option | Best when you want | Tradeoff |
 | --- | --- | --- |
-| Search API | Search results | Usually hosted / paid |
-| Full crawler / index | Persistent search backend | More infrastructure |
-| SearxNG | Metasearch | Still needs setup and a ranking layer |
-| **TinySearch** | MCP research prompt with ranked chunks | Lightweight; not a full search engine |
+| Search API | Hosted search results with stronger coverage guarantees | Usually paid, hosted, and not MCP-native |
+| SearXNG | Self-hosted metasearch | You still need crawling, reranking, chunking, and prompt assembly |
+| Full crawler / index | Persistent searchable storage | More infrastructure than most local agents need |
+| Browser automation | A model clicking around the web | More tokens, slower runs, and less predictable evidence packing |
+| **TinySearch** | A local MCP research tool that returns ranked, cited evidence chunks | Lightweight by design; not a full search engine or hosted answer API |
+
+## Community
+
+Join the [TinySearch Discord](https://discord.gg/NG6u2zamR) for support,
+release updates, bug reports, and contributor discussion.
 
 ## Entrypoints
 
