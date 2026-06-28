@@ -90,9 +90,9 @@ def chunk_text(
         if not block:
             continue
 
-        heading_match = re.match(r"^(#{1,6})\s+(.+)$", block)
-        if heading_match:
-            current_heading = heading_match.group(2).strip()
+        heading = _parse_markdown_heading(block)
+        if heading is not None:
+            current_heading = heading
 
         block_tokens = len(encoding.encode(block))
 
@@ -114,3 +114,17 @@ def chunk_text(
     return chunks
 
 chunk_markdown = chunk_text
+
+
+def _parse_markdown_heading(block: str) -> str | None:
+    if not block or block[0] != "#":
+        return None
+    marker_count = 0
+    while marker_count < len(block) and block[marker_count] == "#":
+        marker_count += 1
+    if marker_count < 1 or marker_count > 6:
+        return None
+    if marker_count >= len(block) or not block[marker_count].isspace():
+        return None
+    heading = block[marker_count:].strip()
+    return heading or None
