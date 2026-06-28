@@ -17,6 +17,7 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from pipelines.agentic_research import agentic_run
+from services.current_datetime_service import current_datetime_payload
 from services.embedding_service import normalize_embedding_backend
 from services.research_config_service import (
     config_trace_path,
@@ -165,14 +166,20 @@ async def _run_streamable_http_combined_async() -> None:
 
 
 MCP_INSTRUCTIONS = """
-This MCP server exposes two high-level web tools:
+This MCP server exposes three tools:
 
-1. research(query)
-2. scrape_url(url, query)
+1. get_current_datetime()
+2. research(query)
+3. scrape_url(url, query)
+
+Before calling research for time-sensitive questions, or if you need to add
+year/month/day context to a query, call get_current_datetime() first to orient
+on the current date and time (UTC).
 
 Pass the user's question as-is in query. Do not rewrite, correct spelling,
 expand abbreviations, add dates, add missing context, simplify, translate, or
-otherwise improve the user's wording before calling either tool.
+otherwise improve the user's wording before calling either tool, unless temporal
+augmentation is genuinely needed after checking get_current_datetime().
 
 Use research first when you need to discover relevant URLs. It searches the web
 through the configured backend (SearXNG by default, with a DuckDuckGo fallback),
@@ -231,13 +238,30 @@ mcp = FastMCP(
 
 
 @mcp.tool(
+    name="get_current_datetime",
+    title="Get Current Datetime",
+    description=(
+        "Return the current date and time in UTC. Call this first for "
+        "time-sensitive questions, relative dates such as latest, this year, "
+        "or last month, or before adding year/month/day context to a research "
+        "query."
+    ),
+)
+async def get_current_datetime_tool() -> dict[str, str]:
+    _log("get_current_datetime called")
+    return current_datetime_payload()
+
+
+@mcp.tool(
     name="research",
     title="Research",
     description=(
         "Discover relevant URLs for the user's question, crawl ranked pages, "
         "and return a search-grounded answer prompt. Use this first when you "
         "need to find sources. Input schema has exactly one field: query. "
-        "Pass the user's question as-is."
+        "Pass the user's question as-is. For time-sensitive or relative-date "
+        "questions, call get_current_datetime() first unless you already "
+        "know the current date and time."
     ),
 )
 async def research(
