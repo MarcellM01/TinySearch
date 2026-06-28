@@ -15,6 +15,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, HttpUrl
 
 from pipelines.agentic_research import agentic_run
+from services.current_datetime_service import current_datetime_payload
 from services.embedding_service import normalize_embedding_backend
 from services.research_config_service import (
     config_trace_path,
@@ -128,6 +129,11 @@ class ResearchRequest(BaseModel):
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/current_datetime")
+async def current_datetime_endpoint() -> dict[str, str]:
+    return current_datetime_payload()
 
 
 @app.post("/web_search")

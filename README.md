@@ -60,18 +60,21 @@ Stop and remove the containers later with:
 docker compose -f "https://github.com/MarcellM01/TinySearch.git#main:compose.quickstart.yaml" down
 ```
 
-TinySearch exposes two MCP tools:
+TinySearch exposes three MCP tools:
 
 ```text
+get_current_datetime()
 research(query)
 scrape_url(url, query)
 ```
 
-Pass the user's question as-is. Use `research` first when you need to discover
-relevant URLs; it searches, crawls, reranks, and returns the grounded prompt in
-`answer`. Use `scrape_url` after the user provides a URL or `research` already
-identified the page to inspect; it applies the same ranking with the server's
-default token budget and returns the grounded prompt in `answer`.
+Call `get_current_datetime()` first for time-sensitive questions or before
+adding year/month/day context to a research query. Pass the user's question
+as-is. Use `research` first when you need to discover relevant URLs; it searches,
+crawls, reranks, and returns the grounded prompt in `answer`. Use `scrape_url`
+after the user provides a URL or `research` already identified the page to
+inspect; it applies the same ranking with the server's default token budget and
+returns the grounded prompt in `answer`.
 
 ## Community
 
@@ -281,6 +284,7 @@ uvicorn servers.fastapi_server:app --reload
 Endpoints:
 
 - `GET /health`
+- `GET /current_datetime`
 - `GET /web_search?query=...`
 - `POST /site_crawl`
 - `POST /scrape`

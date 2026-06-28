@@ -1,8 +1,14 @@
 ## MCP Knowledge Pack (tinysearch)
 
-This environment uses the **tinysearch** MCP server. It exposes **two** tools.
+This environment uses the **tinysearch** MCP server. It exposes **three** tools.
 
 ### Available tools
+
+**`get_current_datetime()`**
+
+- **Input:** none.
+- **Output:** `{"date_utc", "time_utc"}` in UTC.
+- **When to use:** before time-sensitive research, relative-date questions (`latest`, `this year`, `last month`), or when you need to add year/month/day context to a `research` query.
 
 **`research(query)`**
 
@@ -16,7 +22,7 @@ This environment uses the **tinysearch** MCP server. It exposes **two** tools.
 - **Output:** `{"answer", "url", "title", "truncated", "retrieved_at"}`. The `answer` is a **URL-grounded prompt** (not a finished article): it contains the page content most relevant to `query`. **Your job** is to answer from that prompt and **cite the returned `url`**.
 - **Errors:** failures surface as `ValueError` with stable code prefixes: `invalid_url`, `blocked_url`, `unsupported_document`, `empty_content`, `fetch_failed`, `fetch_timeout`.
 
-There is **no** `access_site`, `search_web`, `lite_*`, or `mode` / `max_results` on this server. Use **`research(query)`** for discovery and **`scrape_url(url, query)`** when you already know the page to read.
+There is **no** `access_site`, `search_web`, `lite_*`, or `mode` / `max_results` on this server. Use **`get_current_datetime()`** for current UTC time, **`research(query)`** for discovery, and **`scrape_url(url, query)`** when you already know the page to read.
 
 ---
 
@@ -35,6 +41,11 @@ This order is mandatory. Reversing it (or only doing the MCP half) mis-describes
 - “Where is X configured / called / defined?”
 - “Which version / provider / endpoint does the code target?”
 - Anything answerable from files in the repo.
+
+#### When to use `get_current_datetime()`
+Use it before **`research(query)`** when:
+- the question is time-sensitive or uses relative dates
+- you need the current year/month/day to orient a search query
 
 #### When to use `research(query)`
 Use it when you need **up-to-date external facts** and primary sources, and you do **not** yet know which page to read:
@@ -60,12 +71,13 @@ Pass the user’s question in **`query`** unchanged. Cite the **`url`** returned
 
 ---
 
-### Strategy with two tools
+### Strategy with three tools
 
-1. **Discovery first:** if you do not yet know which page to read, call **`research(query)`** once with a clear question aligned to the user’s goal.
-2. **Known URL:** if the user gave a URL (or one is already identified), call **`scrape_url(url, query)`** instead of re-searching for the same page.
-3. **Answer from `answer`**: synthesize the user’s reply from the grounded prompt; pull **URLs** from the prompt (or the `url` field for `scrape_url`) for citations.
-4. If the prompt is thin on one angle, **refine `query`** and call the same tool again with a narrower follow-up, or switch tools only when the gap is “find a page” (`research`) vs “read this page” (`scrape_url`).
+1. **Time check:** for time-sensitive or relative-date questions, call **`get_current_datetime()`** first unless you already know the current UTC date and time.
+2. **Discovery first:** if you do not yet know which page to read, call **`research(query)`** once with a clear question aligned to the user’s goal.
+3. **Known URL:** if the user gave a URL (or one is already identified), call **`scrape_url(url, query)`** instead of re-searching for the same page.
+4. **Answer from `answer`**: synthesize the user’s reply from the grounded prompt; pull **URLs** from the prompt (or the `url` field for `scrape_url`) for citations.
+5. If the prompt is thin on one angle, **refine `query`** and call the same tool again with a narrower follow-up, or switch tools only when the gap is “find a page” (`research`) vs “read this page” (`scrape_url`).
 
 #### If the user gave an exact URL
 Call **`scrape_url(url, query)`** with the pasted URL and the user’s question as `query`. Do not route URL-only fetches through **`research(query)`** unless you also need broader discovery beyond that page.
