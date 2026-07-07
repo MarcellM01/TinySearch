@@ -30,6 +30,8 @@ DEFAULT_RESEARCH_CONFIG: dict[str, Any] = {
     "chunk_rank_oversample": 3,
     "chunk_dedupe_jaccard_threshold": 0.92,
     "chunk_max_per_source_url": 4,
+    "chunk_dense_bm25_prefilter_per_source": 16,
+    "chunk_dense_bm25_prefilter_max_total": 128,
     "max_concurrent_crawls": 5,
     "max_concurrent_embedding_calls": 3,
     "pipeline_timeout_seconds": 120.0,
@@ -74,6 +76,10 @@ _INT_FIELDS = {
     "crawl_max_page_tokens",
     "dense_document_embed_batch_size",
 }
+_NULLABLE_INT_FIELDS = {
+    "chunk_dense_bm25_prefilter_per_source",
+    "chunk_dense_bm25_prefilter_max_total",
+}
 _FLOAT_FIELDS = {
     "search_rrf_cutoff",
     "search_dense_weight",
@@ -93,6 +99,8 @@ def _coerce_config(raw: dict[str, Any]) -> dict[str, Any]:
         config.pop(legacy, None)
     for key in _INT_FIELDS:
         config[key] = int(config[key])
+    for key in _NULLABLE_INT_FIELDS:
+        config[key] = int(config[key]) if config.get(key) is not None else None
     for key in _FLOAT_FIELDS:
         config[key] = float(config[key])
     raw_timeout = config.get("pipeline_timeout_seconds")
@@ -193,6 +201,8 @@ def research_run_kwargs(config: dict[str, Any] | None = None) -> dict[str, Any]:
         "chunk_rank_oversample",
         "chunk_dedupe_jaccard_threshold",
         "chunk_max_per_source_url",
+        "chunk_dense_bm25_prefilter_per_source",
+        "chunk_dense_bm25_prefilter_max_total",
         "max_concurrent_crawls",
         "max_concurrent_embedding_calls",
         "pipeline_timeout_seconds",

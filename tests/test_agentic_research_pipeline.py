@@ -299,6 +299,64 @@ class AgenticResearchPipelineTests(unittest.IsolatedAsyncioTestCase):
                 crawl_fn=_fake_crawl,
             )
 
+    async def test_pipeline_traces_chunk_prefilter_dense_candidate_count(self) -> None:
+        def many_results(query: str, limit: int) -> list[SearchResult]:
+            return [
+                SearchResult(
+                    result_id=idx + 1,
+                    title=f"Python {idx}",
+                    url=f"https://example.com/python-{idx}",
+                    text="Python asyncio search guide.",
+                )
+                for idx in range(2)
+            ]
+
+        async def many_chunks_crawl(**kwargs):
+            markdown = "\n\n".join(
+                f"Python async search section {idx}." for idx in range(10)
+            )
+            return {
+                "url": kwargs["url"],
+                "markdown": markdown,
+                "markdown_raw": markdown,
+                "html": "",
+                "tokens_raw": 100,
+            }
+
+        embedded_document_inputs = 0
+
+        async def counting_embedder(inputs: list[str]) -> list[list[float]]:
+            nonlocal embedded_document_inputs
+            embedded_document_inputs += sum(
+                1 for text in inputs if text != "python async search"
+            )
+            return [[1.0, 0.0] if "python" in text.lower() else [0.0, 1.0] for text in inputs]
+
+        with tempfile.TemporaryDirectory() as tmp:
+            trace_path = Path(tmp) / "trace.json"
+            await agentic_run(
+                "python async search",
+                search_top_k=2,
+                search_max_results_to_keep=2,
+                chunk_max_results_to_keep=2,
+                crawl_max_chunk_tokens=5,
+                crawl_overlap_tokens=0,
+                chunk_dense_bm25_prefilter_per_source=2,
+                chunk_dense_bm25_prefilter_max_total=4,
+                dense_query_prefix="",
+                dense_document_prefix="",
+                embedder=counting_embedder,
+                search_fn=many_results,
+                crawl_fn=many_chunks_crawl,
+                trace_path=str(trace_path),
+            )
+
+            trace = json.loads(trace_path.read_text(encoding="utf-8"))
+
+        self.assertGreater(trace["chunk_ranking"]["chunks_total"], 4)
+        self.assertEqual(trace["chunk_ranking"]["dense_candidates"], 4)
+        self.assertLess(embedded_document_inputs, trace["chunk_ranking"]["chunks_total"] + 2)
+
 
 if __name__ == "__main__":
     unittest.main()

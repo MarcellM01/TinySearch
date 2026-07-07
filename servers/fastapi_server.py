@@ -105,6 +105,12 @@ class ResearchRequest(BaseModel):
         default=None, ge=0.0, le=1.0
     )
     chunk_max_per_source_url: int | None = Field(default=None, ge=0, le=500)
+    chunk_dense_bm25_prefilter_per_source: int | None = Field(
+        default=None, ge=0, le=500
+    )
+    chunk_dense_bm25_prefilter_max_total: int | None = Field(
+        default=None, ge=0, le=10_000
+    )
     max_concurrent_crawls: int | None = Field(default=None, ge=1, le=20)
     max_concurrent_embedding_calls: int | None = Field(default=None, ge=1, le=20)
     pipeline_timeout_seconds: float | None = Field(default=None, gt=0)

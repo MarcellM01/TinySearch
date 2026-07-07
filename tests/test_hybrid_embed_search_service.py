@@ -199,6 +199,72 @@ class HybridEmbedSearchServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(call_sizes, [1, 2])
         self.assertEqual([chunk["chunk_id"] for chunk in ranked], ["python", "bread"])
 
+    async def test_dense_bm25_prefilter_embeds_per_source_shortlist(self) -> None:
+        chunks = [
+            {
+                "chunk_id": f"{source}-{idx}",
+                "source_url": f"https://example.com/{source}",
+                "text": text,
+            }
+            for source in ("a", "b")
+            for idx, text in enumerate(
+                [
+                    "python async search exact match",
+                    "python async secondary match",
+                    "unrelated filler text",
+                    "another unrelated filler",
+                ]
+            )
+        ]
+        embedded_docs: list[str] = []
+
+        async def embedder(inputs: list[str]) -> list[list[float]]:
+            vectors: list[list[float]] = []
+            for text in inputs:
+                normalized = text.removeprefix("task: search result | query: ").removeprefix(
+                    "title: none | text: "
+                )
+                if normalized != "python async search":
+                    embedded_docs.append(normalized)
+                vectors.append([1.0, 0.0] if "python" in normalized else [0.0, 1.0])
+            return vectors
+
+        ranked = await rank_chunks_hybrid(
+            "python async search",
+            chunks,
+            embedder=embedder,
+            dense_bm25_prefilter_per_source=1,
+            dense_bm25_prefilter_max_total=4,
+        )
+
+        self.assertEqual(len(embedded_docs), 2)
+        self.assertEqual(
+            {chunk["source_url"] for chunk in ranked if chunk["dense_candidate"]},
+            {"https://example.com/a", "https://example.com/b"},
+        )
+
+    async def test_dense_bm25_prefilter_skips_small_pools(self) -> None:
+        chunks = [
+            {"chunk_id": "python", "source_url": "https://example.com/a", "text": "python async search"},
+            {"chunk_id": "bread", "source_url": "https://example.com/b", "text": "bread recipes"},
+        ]
+        call_sizes: list[int] = []
+
+        async def embedder(inputs: list[str]) -> list[list[float]]:
+            call_sizes.append(len(inputs))
+            return [[1.0, 0.0] if "python" in text else [0.0, 1.0] for text in inputs]
+
+        ranked = await rank_chunks_hybrid(
+            "python async search",
+            chunks,
+            embedder=embedder,
+            dense_bm25_prefilter_per_source=1,
+            dense_bm25_prefilter_max_total=10,
+        )
+
+        self.assertEqual(call_sizes, [1, 2])
+        self.assertTrue(all(chunk["dense_candidate"] for chunk in ranked))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -57,6 +57,47 @@ def _rank_by_score(scores: Sequence[float]) -> dict[int, int]:
     }
 
 
+def _source_url(chunk: dict[str, Any]) -> str:
+    return str(chunk.get("source_url") or "")
+
+
+def _select_dense_candidate_indices(
+    bm25_scores: Sequence[float],
+    chunks: Sequence[dict[str, Any]],
+    *,
+    per_source: int | None,
+    max_total: int | None,
+) -> list[int]:
+    if per_source is None or per_source <= 0:
+        return list(range(len(chunks)))
+    if max_total is not None and max_total <= 0:
+        return list(range(len(chunks)))
+    if max_total is not None and len(chunks) <= max_total:
+        return list(range(len(chunks)))
+
+    grouped: dict[str, list[int]] = {}
+    for idx, chunk in enumerate(chunks):
+        grouped.setdefault(_source_url(chunk), []).append(idx)
+
+    selected: set[int] = set()
+    for indices in grouped.values():
+        ranked_source = sorted(
+            indices,
+            key=lambda idx: (float(bm25_scores[idx]), -idx),
+            reverse=True,
+        )
+        selected.update(ranked_source[:per_source])
+
+    selected_indices = sorted(
+        selected,
+        key=lambda idx: (float(bm25_scores[idx]), -idx),
+        reverse=True,
+    )
+    if max_total is not None:
+        selected_indices = selected_indices[:max_total]
+    return sorted(selected_indices)
+
+
 async def _call_embedder(embedder: EmbeddingFn, inputs: list[str]) -> list[list[float]]:
     embeddings = embedder(inputs)
     if inspect.isawaitable(embeddings):
@@ -169,6 +210,8 @@ async def rank_chunks_hybrid(
     dense_query_prefix: str = "task: search result | query: ",
     dense_document_prefix: str = "title: none | text: ",
     dense_document_embed_batch_size: int | None = 32,
+    dense_bm25_prefilter_per_source: int | None = None,
+    dense_bm25_prefilter_max_total: int | None = None,
     rrf_k: int = 60,
     semaphore: "Any" = None,
     timeout_seconds: float = 60.0,
@@ -182,6 +225,9 @@ async def rank_chunks_hybrid(
     ``dense_document_embed_batch_size`` embeds the query once, then documents in
     sub-batches (default 32). Use ``None`` or ``<= 0`` to embed all documents in
     one call (legacy behavior, larger peak memory).
+    ``dense_bm25_prefilter_per_source`` and ``dense_bm25_prefilter_max_total``
+    limit dense document embedding to a BM25-selected shortlist while preserving
+    per-source representation. Use ``None`` or ``<= 0`` to disable prefiltering.
     The returned ``rrf_similarity`` is normalized to 0..1, which makes cutoffs
     easier to reason about. ``hybrid_similarity`` is kept as a compatibility alias.
     """
@@ -211,11 +257,19 @@ async def rank_chunks_hybrid(
         bm25_ranks = _rank_by_score(bm25_scores)
 
     dense_scores = [0.0 for _ in chunk_list]
-    dense_ranks = {idx: 1 for idx in range(len(chunk_list))}
+    dense_ranks = {idx: len(chunk_list) + 1 for idx in range(len(chunk_list))}
+    dense_candidate_indices = list(range(len(chunk_list)))
     if dense_weight > 0.0:
+        dense_candidate_indices = _select_dense_candidate_indices(
+            bm25_scores,
+            chunk_list,
+            per_source=dense_bm25_prefilter_per_source,
+            max_total=dense_bm25_prefilter_max_total,
+        )
+        dense_candidate_texts = [chunk_texts[idx] for idx in dense_candidate_indices]
         query_embedding, doc_embeddings = await _embed_query_and_document_chunks(
             query,
-            chunk_texts,
+            dense_candidate_texts,
             dense_query_prefix=dense_query_prefix,
             dense_document_prefix=dense_document_prefix,
             embedder=embedder,
@@ -224,11 +278,20 @@ async def rank_chunks_hybrid(
             max_timeout_retries=max_timeout_retries,
             document_embed_batch_size=dense_document_embed_batch_size,
         )
-        dense_scores = [
+        candidate_dense_scores = [
             _cosine_similarity(query_embedding, chunk_embedding)
             for chunk_embedding in doc_embeddings
         ]
-        dense_ranks = _rank_by_score(dense_scores)
+        for idx, score in zip(dense_candidate_indices, candidate_dense_scores, strict=True):
+            dense_scores[idx] = score
+        candidate_dense_ranks = _rank_by_score(candidate_dense_scores)
+        dense_ranks = {
+            idx: candidate_dense_ranks[candidate_idx]
+            for candidate_idx, idx in enumerate(dense_candidate_indices)
+        }
+        fallback_rank = len(dense_candidate_indices) + 1
+        for idx in range(len(chunk_list)):
+            dense_ranks.setdefault(idx, fallback_rank)
 
     cutoff = rrf_similarity_cutoff
     if cutoff is None:
@@ -236,6 +299,7 @@ async def rank_chunks_hybrid(
     max_rrf_score = (sparse_weight + dense_weight) / (rrf_k + 1)
 
     ranked: list[dict[str, Any]] = []
+    dense_candidate_set = set(dense_candidate_indices)
     for idx, chunk in enumerate(chunk_list):
         bm25_rank = bm25_ranks[idx]
         dense_rank = dense_ranks[idx]
@@ -255,6 +319,7 @@ async def rank_chunks_hybrid(
                 "bm25_rank": bm25_rank,
                 "dense_score": float(dense_scores[idx]),
                 "dense_rank": dense_rank,
+                "dense_candidate": idx in dense_candidate_set,
                 "rrf_score": float(rrf_score),
                 "rrf_similarity": float(rrf_similarity),
                 "hybrid_similarity": float(rrf_similarity),

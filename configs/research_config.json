@@ -9,6 +9,8 @@
   "chunk_rank_oversample": 3,
   "chunk_dedupe_jaccard_threshold": 0.92,
   "chunk_max_per_source_url": 4,
+  "chunk_dense_bm25_prefilter_per_source": 16,
+  "chunk_dense_bm25_prefilter_max_total": 128,
   "max_concurrent_crawls": 5,
   "max_concurrent_embedding_calls": 4,
   "pipeline_timeout_seconds": 120.0,

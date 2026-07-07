@@ -143,6 +143,8 @@ async def _rank(
     dense_query_prefix: str,
     dense_document_prefix: str,
     dense_document_embed_batch_size: int | None,
+    dense_bm25_prefilter_per_source: int | None = None,
+    dense_bm25_prefilter_max_total: int | None = None,
 ) -> list[dict[str, Any]]:
     return await rank_chunks_hybrid(
         query,
@@ -154,6 +156,8 @@ async def _rank(
         dense_query_prefix=dense_query_prefix,
         dense_document_prefix=dense_document_prefix,
         dense_document_embed_batch_size=dense_document_embed_batch_size,
+        dense_bm25_prefilter_per_source=dense_bm25_prefilter_per_source,
+        dense_bm25_prefilter_max_total=dense_bm25_prefilter_max_total,
         semaphore=semaphore,
         timeout_seconds=timeout_seconds,
         max_timeout_retries=timeout_retries,
@@ -192,6 +196,8 @@ async def agentic_run(
     dense_query_prefix: str = DEFAULT_DENSE_QUERY_PREFIX,
     dense_document_prefix: str = DEFAULT_DENSE_DOCUMENT_PREFIX,
     dense_document_embed_batch_size: int | None = 32,
+    chunk_dense_bm25_prefilter_per_source: int | None = 16,
+    chunk_dense_bm25_prefilter_max_total: int | None = 128,
     blocked_domains: Sequence[str] | None = None,
     trace_path: str | Path | None = None,
     progress_callback: ProgressCallback | None = None,
@@ -280,12 +286,15 @@ async def agentic_run(
             "dense_query_prefix": dense_query_prefix,
             "dense_document_prefix": dense_document_prefix,
             "dense_document_embed_batch_size": dense_document_embed_batch_size,
+            "chunk_dense_bm25_prefilter_per_source": chunk_dense_bm25_prefilter_per_source,
+            "chunk_dense_bm25_prefilter_max_total": chunk_dense_bm25_prefilter_max_total,
             "blocked_domains": list(blocked_domains or []),
         },
         "web_search": [],
         "ranked_search_results": [],
         "crawl_results": [],
         "ranked_chunk_pool": [],
+        "chunk_ranking": {},
         "final_prompt": "",
         "crawl_errors": [],
     }
@@ -439,7 +448,35 @@ async def agentic_run(
                 1,
                 min(len(chunk_pool), chunk_max_results_to_keep * oversample),
             )
-            await emit("chunk_embed_ranking", chunks=len(chunk_pool), rank_pool_cap=chunk_rank_pool_cap)
+            prefilter_enabled = (
+                chunk_dense_bm25_prefilter_per_source is not None
+                and chunk_dense_bm25_prefilter_per_source > 0
+                and chunk_dense_bm25_prefilter_max_total is not None
+                and chunk_dense_bm25_prefilter_max_total > 0
+                and len(chunk_pool) > chunk_dense_bm25_prefilter_max_total
+            )
+            dense_candidates_estimate = (
+                min(
+                    len(chunk_pool),
+                    len({str(chunk.get("source_url") or "") for chunk in chunk_pool})
+                    * chunk_dense_bm25_prefilter_per_source,
+                    chunk_dense_bm25_prefilter_max_total,
+                )
+                if prefilter_enabled
+                else len(chunk_pool)
+            )
+            trace["chunk_ranking"] = {
+                "chunks_total": len(chunk_pool),
+                "dense_candidates": dense_candidates_estimate,
+                "rank_pool_cap": chunk_rank_pool_cap,
+            }
+            await emit(
+                "chunk_embed_ranking",
+                chunks=len(chunk_pool),
+                chunks_total=len(chunk_pool),
+                dense_candidates=dense_candidates_estimate,
+                rank_pool_cap=chunk_rank_pool_cap,
+            )
             ranked_wide = await _rank(
                 query=query,
                 chunks=chunk_pool,
@@ -453,6 +490,8 @@ async def agentic_run(
                 dense_query_prefix=dense_query_prefix,
                 dense_document_prefix=dense_document_prefix,
                 dense_document_embed_batch_size=dense_document_embed_batch_size,
+                dense_bm25_prefilter_per_source=chunk_dense_bm25_prefilter_per_source,
+                dense_bm25_prefilter_max_total=chunk_dense_bm25_prefilter_max_total,
             )
             ranked_chunk_pool = select_chunks_with_quota_and_fill(
                 ranked_wide,
@@ -476,6 +515,7 @@ async def agentic_run(
                 "pages_indexed",
                 urls_read=len(ranked_search_chunks),
                 chunks_extracted=len(chunk_pool),
+                dense_candidates=dense_candidates_estimate,
                 chunks_in_prompt=len(ranked_chunk_pool),
                 crawl_errors_count=len(crawl_errors),
             )
