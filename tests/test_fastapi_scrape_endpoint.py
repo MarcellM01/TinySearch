@@ -36,22 +36,13 @@ class ScrapeRequestValidationTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             ScrapeRequest(url="https://example.com/x", query="")
 
-    def test_rejects_zero_max_tokens(self) -> None:
-        with self.assertRaises(ValidationError):
-            ScrapeRequest(url="https://example.com/x", query="q", max_tokens=0)
-
     def test_rejects_non_http_scheme(self) -> None:
         with self.assertRaises(ValidationError):
             ScrapeRequest(url="ftp://example.com/x", query="q")
 
-    def test_defaults(self) -> None:
-        req = ScrapeRequest(url="https://example.com/x", query="q")
-        self.assertEqual(req.max_tokens, 4000)
-        self.assertTrue(req.include_metadata)
-
 
 class ScrapeEndpointTests(unittest.IsolatedAsyncioTestCase):
-    async def test_returns_payload_with_metadata(self) -> None:
+    async def test_returns_mcp_aligned_payload(self) -> None:
         scrape_mock = AsyncMock(
             return_value=_result(
                 metadata={
@@ -72,27 +63,11 @@ class ScrapeEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["answer"], "URL-GROUNDED ANSWER PROMPT...")
         self.assertEqual(payload["url"], "https://example.com/x")
         self.assertEqual(payload["title"], "Title")
-        self.assertEqual(payload["query"], "q")
         self.assertEqual(payload["content_tokens"], 42)
         self.assertEqual(payload["answer_tokens"], 123)
         self.assertFalse(payload["truncated"])
         self.assertEqual(payload["retrieved_at"], "2026-06-12T10:30:00Z")
-        self.assertEqual(payload["metadata"]["author"], "a")
-
-    async def test_omits_metadata_when_include_metadata_false(self) -> None:
-        scrape_mock = AsyncMock(return_value=_result(metadata=None))
-        with patch("servers.fastapi_server.scrape_url", scrape_mock), patch(
-            "servers.fastapi_server._ensure_local_bundle_for_config",
-            new_callable=AsyncMock,
-        ):
-            payload = await scrape_endpoint(
-                ScrapeRequest(
-                    url="https://example.com/x",
-                    query="q",
-                    include_metadata=False,
-                )
-            )
-
+        self.assertNotIn("query", payload)
         self.assertNotIn("metadata", payload)
 
 

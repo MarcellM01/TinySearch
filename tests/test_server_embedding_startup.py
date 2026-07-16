@@ -56,26 +56,6 @@ class FastApiResearchParityTests(unittest.IsolatedAsyncioTestCase):
             trace_path=config_trace_path(config),
         )
 
-    async def test_research_request_overrides_shared_defaults(self) -> None:
-        config = dict(DEFAULT_RESEARCH_CONFIG)
-        config["embedding_backend"] = "openai_compatible"
-        run = AsyncMock(return_value=SimpleNamespace(answer="grounded prompt"))
-
-        with patch(
-            "servers.fastapi_server.load_research_config", return_value=config
-        ), patch("servers.fastapi_server.agentic_run", new=run):
-            await research_endpoint(
-                ResearchRequest(
-                    query="test query",
-                    search_top_k=7,
-                    pipeline_timeout_seconds=9.5,
-                )
-            )
-
-        kwargs = run.await_args.kwargs
-        self.assertEqual(kwargs["search_top_k"], 7)
-        self.assertEqual(kwargs["pipeline_timeout_seconds"], 9.5)
-
     async def test_research_rejects_whitespace_only_query(self) -> None:
         with patch(
             "servers.fastapi_server.load_research_config",

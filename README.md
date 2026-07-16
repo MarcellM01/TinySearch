@@ -272,21 +272,17 @@ Useful when you want HTTP instead of MCP:
 uvicorn servers.fastapi_server:app --reload
 ```
 
-Endpoints:
+Endpoints mirror the MCP tools:
 
 - `GET /health`
-- `GET /current_datetime`
-- `GET /web_search?query=...`
-- `POST /site_crawl`
-- `POST /scrape`
-- `POST /research`
+- `GET /current_datetime` — same as `get_current_datetime()`
+- `POST /research` — body `{"query": "..."}`; same as `research(query)`
+- `POST /scrape` — body `{"url": "...", "query": "..."}`; same as
+  `scrape_url(url, query)`
 
-`POST /scrape` accepts a JSON body with `url` (required), `query` (required,
-non-empty), `max_tokens` (optional, default 4000) and `include_metadata`
-(optional, default true). The response includes a `URL-GROUNDED ANSWER PROMPT`
-in `answer`, plus `content_tokens`, `answer_tokens`, `truncated`, `url`,
-`title`, `retrieved_at` (aware UTC) and best-effort `metadata`
-(`description`, `author`, `published_date`).
+`POST /scrape` returns the same fields as the MCP tool: `answer`,
+`content_tokens`, `answer_tokens`, `truncated`, `url`, `title`, and
+`retrieved_at` (aware UTC).
 
 Errors return `{"detail": {"code", "message"}}` with stable codes:
 `invalid_url` (400), `blocked_url` (403), `unsupported_document` (415),
