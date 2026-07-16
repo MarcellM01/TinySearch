@@ -13,7 +13,6 @@
     {
       "registryType": "oci",
       "identifier": "docker.io/marcellm01/tinysearch:v0.3.2",
-      "version": "0.3.2",
       "transport": {
         "type": "stdio"
       },

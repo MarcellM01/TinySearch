@@ -31,7 +31,7 @@ jobs:
           fi
           VERSION=${TAG#v}
           jq --arg v "$VERSION" --arg tag "$TAG" \
-            '.version = $v | .packages[0].version = $v | .packages[0].identifier = ("docker.io/marcellm01/tinysearch:" + $tag)' \
+            '.version = $v | .packages[0].identifier = ("docker.io/marcellm01/tinysearch:" + $tag)' \
             server.json > server.tmp
           mv server.tmp server.json
 
