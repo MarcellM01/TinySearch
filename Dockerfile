@@ -49,7 +49,8 @@ CMD ["uvicorn", "servers.fastapi_server:app", "--host", "0.0.0.0", "--port", "80
 FROM runtime-base AS mcp
 
 LABEL org.opencontainers.image.title="TinySearch MCP" \
-      org.opencontainers.image.description="TinySearch MCP stdio server"
+      org.opencontainers.image.description="TinySearch MCP stdio server" \
+      io.modelcontextprotocol.server.name="io.github.MarcellM01/tinysearch"
 
 VOLUME ["/data/models"]
 CMD ["python", "servers/mcp_server.py"]

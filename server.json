@@ -1,0 +1,43 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.MarcellM01/tinysearch",
+  "description": "Self-hosted web research for MCP agents.",
+  "version": "0.3.1",
+  "websiteUrl": "https://github.com/MarcellM01/TinySearch",
+  "repository": {
+    "url": "https://github.com/MarcellM01/TinySearch",
+    "source": "github",
+    "id": "1237429296"
+  },
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "docker.io/marcellm01/tinysearch:v0.3.1",
+      "version": "0.3.1",
+      "registryBaseUrl": "https://docker.io",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "MCP_TRANSPORT",
+          "description": "MCP transport to serve: stdio (default), sse, or streamable-http.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "TINYSEARCH_CONFIG_PATH",
+          "description": "Path to a research_config.json inside the container, for overriding search/embedding defaults.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "SEARXNG_URL",
+          "description": "SearXNG search endpoint URL. Only needed if not using the bundled Compose SearXNG service.",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}
