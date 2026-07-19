@@ -133,25 +133,9 @@ TinySearch does not directly answer the question. It returns a
 **structured prompt** in the MCP tool's **`answer` field**, and your
 **client model** uses that prompt to produce the final **cited response**.
 
-```text
-QUESTION
-What happened in the latest NFL playoffs?
-
-TODAY
-2026-05-15
-
-RESULTS
-1. Title
-   URL
-   Relevant extracted text...
-
-2. Title
-   URL
-   Relevant extracted text...
-
-INSTRUCTIONS
-Answer only from the results. Cite source URLs.
-```
+<p align="center">
+  <img src="assets/demo_terminal_prompt.gif" alt="TinySearch terminal demo showing a source-grounded research prompt" width="780" />
+</p>
 
 ## Run from source
 
