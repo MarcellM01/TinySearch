@@ -1,9 +1,12 @@
 # TinySearch
 
 <p align="center">
-  <img src="assets/tinysearch_logo.png" alt="TinySearch" width="240" />
+  <a href="https://tinysuite.dev">
+    <img src="assets/tinysearch-full-logo.png" alt="TinySearch" width="240" />
+  </a>
 </p>
 
+[![Website](https://img.shields.io/badge/tinysuite.dev-home-000000?logo=googlechrome&logoColor=white)](https://tinysuite.dev)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/MarcellM01/TinySearch?label=release)](https://github.com/MarcellM01/TinySearch/releases)
 [![Last Commit](https://img.shields.io/github/last-commit/MarcellM01/TinySearch)](https://github.com/MarcellM01/TinySearch/commits/main)
@@ -19,12 +22,31 @@ search the web, rerank results, crawl the best pages, extract the most relevant
 chunks, and return a source-grounded prompt your LLM can answer from.
 
 <p align="center">
-  <img src="assets/demo_terminal_prompt.gif" alt="TinySearch terminal demo showing a source-grounded research prompt" width="780" />
+  <img src="assets/tinysearch-readme.gif" alt="TinySearch terminal demo showing a source-grounded research prompt" width="780" />
 </p>
 
 No hosted dashboard. No account system. No analytics. No scraped-data cache.
 
 Just search -> crawl -> rerank -> grounded prompt.
+
+## Contents
+
+- [Why people use it](#why-people-use-it)
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Run from source](#run-from-source)
+- [Docker](#docker)
+- [Optional HTTP server](#optional-http-server)
+- [Configuration](#configuration)
+- [Search backends](#search-backends)
+- [When not to use TinySearch](#when-not-to-use-tinysearch)
+- [TinySearch vs...](#tinysearch-vs)
+- [Community](#community)
+- [Entrypoints](#entrypoints)
+- [Tests](#tests)
+- [Contact](#contact)
+- [Privacy notes](#privacy-notes)
+- [License](#license)
 
 ## Why people use it
 
@@ -207,6 +229,7 @@ Docker images are published automatically when a version tag or GitHub release i
 - `marcellm01/tinysearch:<version>` is published for tags such as `v0.1.4`.
 - `marcellm01/tinysearch:latest` is updated for stable releases.
 - Images are built for both `linux/amd64` and `linux/arm64`.
+
 ### Persistent models and config
 
 For repeated use, keep downloaded models in a Docker volume and mount your local
